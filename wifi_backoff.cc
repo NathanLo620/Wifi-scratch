@@ -191,11 +191,12 @@ ApRxCallback(Ptr<Socket> sock)
 static void
 BackoffTraceCb(uint32_t backoff, uint8_t ac)
 {
-  /*
+  
   std::cout << Simulator::Now().GetSeconds()
             << "s [TRACE] BackoffSlots=" << backoff
+            << " CW=" << g_lastCwByNode[0]
             << " AC=" << (int)ac << "(" << AcName(ac) << ")\n";
-  */
+  
 }
 
 static void
@@ -297,7 +298,7 @@ main(int argc, char *argv[])
   std::string rateStr = "2Mbps";
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
-  uint32_t    cwMin   = 15;
+  uint32_t    cwMin   = 7;
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of STAs", nSta);
