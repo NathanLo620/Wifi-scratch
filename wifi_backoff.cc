@@ -189,14 +189,17 @@ ApRxCallback(Ptr<Socket> sock)
 }
 
 static void
-BackoffTraceCb(uint32_t backoff, uint8_t ac)
+BackoffTraceCb(std::string context, uint32_t backoff, uint8_t ac)
 {
-  
+  uint32_t nid = ExtractNodeId(context);
+  uint32_t cw = 0;
+  if (g_lastCwByNode.count(nid))
+    cw = g_lastCwByNode[nid];
+
   std::cout << Simulator::Now().GetSeconds()
             << "s [TRACE] BackoffSlots=" << backoff
-            << " CW=" << g_lastCwByNode[0]
+            << " CW=" << cw
             << " AC=" << (int)ac << "(" << AcName(ac) << ")\n";
-  
 }
 
 static void
@@ -413,7 +416,7 @@ main(int argc, char *argv[])
         "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/" + std::string(acName[i]) + "/BackoffTrace";
     std::string pathC =
         "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/" + std::string(acName[i]) + "/CwTrace";
-    Config::ConnectWithoutContext(pathB, MakeCallback(&BackoffTraceCb));
+    Config::Connect(pathB, MakeCallback(&BackoffTraceCb));
     Config::Connect(pathC, MakeCallback(&CwTraceCb));
   }
 
