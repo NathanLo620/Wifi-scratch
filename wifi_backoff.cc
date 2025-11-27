@@ -296,7 +296,7 @@ main(int argc, char *argv[])
   double      simTime = 10.0;
   std::string rateStr = "2Mbps";
   uint32_t    pktSize = 1200;
-  uint8_t     ac      = 2;
+  uint8_t     ac      = 0;
   uint32_t    cwMin   = 15;
 
   CommandLine cmd(__FILE__);
