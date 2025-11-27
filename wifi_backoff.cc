@@ -195,11 +195,12 @@ BackoffTraceCb(std::string context, uint32_t backoff, uint8_t ac)
   uint32_t cw = 0;
   if (g_lastCwByNode.count(nid))
     cw = g_lastCwByNode[nid];
-
+  /*
   std::cout << Simulator::Now().GetSeconds()
             << "s [TRACE] BackoffSlots=" << backoff
             << " CW=" << cw
             << " AC=" << (int)ac << "(" << AcName(ac) << ")\n";
+  */
 }
 
 static void
@@ -325,6 +326,10 @@ main(int argc, char *argv[])
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211a);
   wifi.SetRemoteStationManager("ns3::MinstrelWifiManager");
+  /* 
+  wifi.SetStandard(WIFI_STANDARD_80211n);
+  wifi.SetRemoteStationManager("ns3::MinstrelHtWifiManager"); 
+  */
 
   WifiMacHelper mac;
   Ssid          ssid("ns3-wifi");
@@ -512,7 +517,7 @@ main(int argc, char *argv[])
   std::cout << "Avg transmissions/pkt:    " << avgTxPerPkt << "\n";
   std::cout << "Avg retransmissions/pkt:  " << avgRetryPerPkt << "\n";
 
-  uint32_t show = 10, cnt = 0;
+  /*uint32_t show = 10, cnt = 0;
   std::cout << "\nSample per-packet (CW0, retries):\n";
   for (auto &kv : g_txCountByPkt)
   {
@@ -524,6 +529,7 @@ main(int argc, char *argv[])
               << "  retries=" << (txn > 1 ? (txn - 1) : 0) << "\n";
     if (++cnt >= show) break;
   }
+  */
 
   Simulator::Destroy();
   return 0;
