@@ -297,9 +297,9 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 5;
-  double      simTime = 10.0;
-  std::string rateStr = "2Mbps";
+  uint32_t    nSta    = 2;
+  double      simTime = 2.0;
+  std::string rateStr = "1Mbps"; // [FIX] User requested 2Mbps App Rate
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
   uint32_t    cwMin   = 7;
@@ -325,10 +325,10 @@ main(int argc, char *argv[])
 
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211a);
-  wifi.SetRemoteStationManager("ns3::MinstrelWifiManager");
-  /* 
-  wifi.SetStandard(WIFI_STANDARD_80211n);
-  wifi.SetRemoteStationManager("ns3::MinstrelHtWifiManager"); 
+  // [FIX] Constant Rate to remove rate control variance
+  /*wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                               "DataMode", StringValue("OfdmRate2Mbps"),
+                               "ControlMode", StringValue("OfdmRate2Mbps"));
   */
 
   WifiMacHelper mac;
@@ -396,12 +396,20 @@ main(int argc, char *argv[])
 
   // Mobility
   MobilityHelper mob;
+  // [FIX] Place AP at (0,0,0)
+  Ptr<ListPositionAllocator> apPos = CreateObject<ListPositionAllocator>();
+  apPos->Add(Vector(0.0, 0.0, 0.0));
+  mob.SetPositionAllocator(apPos);
   mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
   mob.Install(ap);
-  for (uint32_t i = 0; i < nSta; ++i)
-  {
-    mob.Install(sta.Get(i));
-  }
+
+  // [FIX] Place STAs in a random disc around AP (radius 10m)
+  mob.SetPositionAllocator("ns3::RandomDiscPositionAllocator",
+                           "X", StringValue("0.0"),
+                           "Y", StringValue("0.0"),
+                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=10.0]"));
+  mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+  mob.Install(sta);
 
   // Internet
   InternetStackHelper stack;
@@ -483,7 +491,7 @@ main(int argc, char *argv[])
   if (g_macTxUnique > 0)
   {
     uint64_t sumTx = 0;
-    for (auto &kv : g_txCountByPkt)
+    for (auto &kv : g_txCountByPkt)    // key
     {
       sumTx += kv.second;
     }
