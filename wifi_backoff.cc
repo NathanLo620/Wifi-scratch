@@ -1,4 +1,3 @@
-/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
@@ -11,9 +10,7 @@
 #include "ns3/wifi-mpdu.h"
 #include "ns3/timestamp-tag.h"
 #include "ns3/mac48-address.h"
-// [FIX] 加入 Txop 定義，這是公開 Header，可以安全引用
 #include "ns3/txop.h"
-
 #include <unordered_map>
 #include <unordered_set>
 #include <map>
@@ -131,8 +128,6 @@ struct AirKey
 // ---- 追蹤容器 ----
 static std::unordered_map<uint32_t, uint32_t> g_lastCwByNode;
 static std::unordered_map<MacKey, uint32_t, MacKeyHash> g_cwInitByPkt;
-static std::unordered_map<MacKey, uint32_t, MacKeyHash> g_txCountByPkt;
-static std::unordered_set<MacKey, MacKeyHash>           g_seenFirstTx;
 static std::unordered_map<MacKey, Time, MacKeyHash>     g_enqTimeByPkt;
 
 static std::map<AirKey, Time> g_airTxTime;
@@ -155,7 +150,6 @@ ExtractNodeId(const std::string &ctx)
   return static_cast<uint32_t>(std::stoi(ctx.substr(a, b - a)));
 }
 
-// [[maybe_unused]] 避免編譯器警告
 [[maybe_unused]] static const char *
 AcName(uint8_t ac)
 {
@@ -195,12 +189,6 @@ BackoffTraceCb(std::string context, uint32_t backoff, uint8_t ac)
   uint32_t cw = 0;
   if (g_lastCwByNode.count(nid))
     cw = g_lastCwByNode[nid];
-  /*
-  std::cout << Simulator::Now().GetSeconds()
-            << "s [TRACE] BackoffSlots=" << backoff
-            << " CW=" << cw
-            << " AC=" << (int)ac << "(" << AcName(ac) << ")\n";
-  */
 }
 
 static void
@@ -228,7 +216,6 @@ EnqueueCb(std::string ctx, Ptr<const WifiMpdu> mpdu)
   }
 
   g_enqTimeByPkt[key] = Simulator::Now();
-  g_seenFirstTx.erase(key);
 }
 
 static void
@@ -238,25 +225,26 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
   Ptr<Packet>   cp = p->Copy();
   if (!cp->PeekHeader(hdr)) return;
   if (!hdr.IsData()) return;
+  if (hdr.GetAddr1().IsBroadcast()) return;
 
   uint32_t nid = ExtractNodeId(ctx);
   MacKey   key{nid, hdr.GetSequenceNumber()};
 
   ++g_macTxMpdu;
-  auto &cnt = g_txCountByPkt[key];
-  ++cnt;
-  if (!g_seenFirstTx.count(key))
+  
+  if (!hdr.IsRetry())
   {
-    g_seenFirstTx.insert(key);
     ++g_macTxUnique;
-  }
-
-  auto itEnq = g_enqTimeByPkt.find(key);
-  if (itEnq != g_enqTimeByPkt.end() && cnt == 1u)
-  {
-    double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
-    g_macQueueDelay.sumUs += dUs;
-    g_macQueueDelay.count++;
+    
+    // Calculate Queue Delay for first transmission
+    auto itEnq = g_enqTimeByPkt.find(key);
+    if (itEnq != g_enqTimeByPkt.end())
+    {
+      double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
+      g_macQueueDelay.sumUs += dUs;
+      g_macQueueDelay.count++;
+      // Optional: erase to save memory, but EnqueueCb overwrites anyway
+    }
   }
 
   if (nid != 0)
@@ -297,12 +285,12 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 2;
-  double      simTime = 2.0;
-  std::string rateStr = "1Mbps"; // [FIX] User requested 2Mbps App Rate
+  uint32_t    nSta    = 5;
+  double      simTime = 10.0;
+  std::string rateStr = "0.2Mbps"; 
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
-  uint32_t    cwMin   = 7;
+  uint32_t    cwMin   = 1023;
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of STAs", nSta);
@@ -326,10 +314,9 @@ main(int argc, char *argv[])
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211a);
   // [FIX] Constant Rate to remove rate control variance
-  /*wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("OfdmRate2Mbps"),
-                               "ControlMode", StringValue("OfdmRate2Mbps"));
-  */
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                               "DataMode", StringValue("OfdmRate6Mbps"),
+                               "ControlMode", StringValue("OfdmRate6Mbps"));
 
   WifiMacHelper mac;
   Ssid          ssid("ns3-wifi");
@@ -490,12 +477,7 @@ main(int argc, char *argv[])
   double avgRetryPerPkt = 0.0;
   if (g_macTxUnique > 0)
   {
-    uint64_t sumTx = 0;
-    for (auto &kv : g_txCountByPkt)    // key
-    {
-      sumTx += kv.second;
-    }
-    avgTxPerPkt     = static_cast<double>(sumTx) / static_cast<double>(g_macTxUnique);
+    avgTxPerPkt     = static_cast<double>(g_macTxMpdu) / static_cast<double>(g_macTxUnique);
     avgRetryPerPkt  = avgTxPerPkt - 1.0;
   }
 
@@ -524,20 +506,6 @@ main(int argc, char *argv[])
             << avgMacAirDelayUs << " us\n";
   std::cout << "Avg transmissions/pkt:    " << avgTxPerPkt << "\n";
   std::cout << "Avg retransmissions/pkt:  " << avgRetryPerPkt << "\n";
-
-  /*uint32_t show = 10, cnt = 0;
-  std::cout << "\nSample per-packet (CW0, retries):\n";
-  for (auto &kv : g_txCountByPkt)
-  {
-    const MacKey &k   = kv.first;
-    uint32_t      txn = kv.second;
-    uint32_t      cw0 = g_cwInitByPkt.count(k) ? g_cwInitByPkt[k] : 0;
-    std::cout << "  Node " << k.nodeId << " Seq " << k.seq
-              << "  CW0=" << cw0
-              << "  retries=" << (txn > 1 ? (txn - 1) : 0) << "\n";
-    if (++cnt >= show) break;
-  }
-  */
 
   Simulator::Destroy();
   return 0;
