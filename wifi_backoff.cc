@@ -4,29 +4,26 @@
 #include "ns3/wifi-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/applications-module.h"
-#include "ns3/yans-wifi-helper.h"
-#include "ns3/seq-ts-header.h"
-#include "ns3/wifi-mac-header.h"
-#include "ns3/wifi-mpdu.h"
-#include "ns3/timestamp-tag.h"
-#include "ns3/mac48-address.h"
-#include "ns3/txop.h"
+#include "ns3/txop.h" // [CRITICAL] for Txop
+
+#include <iostream>
+#include <sstream>
+#include <vector>
+#include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <map>
 #include <set>
-#include <string>
-#include <sstream>
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("WifiBackoffTrace");
+NS_LOG_COMPONENT_DEFINE("WifiBackoff");
 
+// Helper to convert Mac48Address to string
 static std::string
-MacToString(const Mac48Address &addr)
+MacToString(const Mac48Address &mac)
 {
   std::ostringstream oss;
-  oss << addr;
+  oss << mac;
   return oss.str();
 }
 
@@ -243,11 +240,10 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
       double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
       g_macQueueDelay.sumUs += dUs;
       g_macQueueDelay.count++;
-      // Optional: erase to save memory, but EnqueueCb overwrites anyway
     }
   }
 
-  if (nid != 0)
+  if (nid != 0) // Assuming node 0 is AP, and we only care about STA's Tx time
   {
     AirKey akey;
     akey.sa  = MacToString(hdr.GetAddr2());
@@ -265,20 +261,20 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
   if (!hdr.IsData()) return;
 
   uint32_t nid = ExtractNodeId(ctx);
-  if (nid != 0) return;
+  if (nid != 0) return; // Only process RX at AP (node 0)
 
   AirKey akey;
   akey.sa  = MacToString(hdr.GetAddr2());
   akey.seq = hdr.GetSequenceNumber();
 
   auto it = g_airTxTime.find(akey);
-  if (it == g_airTxTime.end()) return;
+  if (it == g_airTxTime.end()) return; // Not a packet we are tracking
 
   double dUs = (Simulator::Now() - it->second).GetMicroSeconds();
   g_macAirDelay.sumUs += dUs;
   g_macAirDelay.count++;
   g_airRxUnique.insert(akey);
-  g_airTxTime.erase(it);
+  g_airTxTime.erase(it); // Remove from tracking once received
 }
 
 // ---------------------- Main ----------------------
@@ -286,11 +282,11 @@ int
 main(int argc, char *argv[])
 {
   uint32_t    nSta    = 5;
-  double      simTime = 10.0;
-  std::string rateStr = "0.2Mbps"; 
+  double      simTime = 2.0;
+  std::string rateStr = "5Mbps"; 
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
-  uint32_t    cwMin   = 1023;
+  uint32_t    cwMin   = 7;
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of STAs", nSta);
@@ -315,8 +311,9 @@ main(int argc, char *argv[])
   wifi.SetStandard(WIFI_STANDARD_80211a);
   // [FIX] Constant Rate to remove rate control variance
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("OfdmRate6Mbps"),
-                               "ControlMode", StringValue("OfdmRate6Mbps"));
+                               "DataMode", StringValue("OfdmRate24Mbps"),
+                               "ControlMode", StringValue("OfdmRate24Mbps"));
+  
 
   WifiMacHelper mac;
   Ssid          ssid("ns3-wifi");
@@ -394,7 +391,7 @@ main(int argc, char *argv[])
   mob.SetPositionAllocator("ns3::RandomDiscPositionAllocator",
                            "X", StringValue("0.0"),
                            "Y", StringValue("0.0"),
-                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=10.0]"));
+                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=3.0]"));
   mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
   mob.Install(sta);
 
@@ -452,7 +449,10 @@ main(int argc, char *argv[])
     Ptr<UdpSeqTsSender> app = CreateObject<UdpSeqTsSender>();
     app->Setup(apIf.GetAddress(0), port, pktSize, DataRate(rateStr), tos);
     sta.Get(i)->AddApplication(app);
-    app->SetStartTime(Seconds(0.0));
+    
+    // [FIX] Randomize start time to avoid synchronization
+    Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable>();
+    app->SetStartTime(Seconds(var->GetValue(0.0, 1.0)));
     app->SetStopTime(Seconds(simTime));
   }
 
@@ -493,7 +493,7 @@ main(int argc, char *argv[])
   std::cout << "CWmin Setting: " << cwMin << " (for " << queueName << ")\n";
   std::cout << "RxPkts=" << g_app.rxPkts
             << " , Throughput=" << throughput << " Mbps\n";
-  std::cout << "Avg One-way Delay (UDP) = " << avgAppDelayUs << " us\n";
+  //std::cout << "Avg One-way Delay (UDP) = " << avgAppDelayUs << " us\n";
 
   std::cout << "\n=== RESULTS (MAC) ===\n";
   std::cout << "TX MPDUs (incl. retries): " << g_macTxMpdu << "\n";

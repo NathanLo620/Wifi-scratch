@@ -6,7 +6,7 @@ import os
 # Configuration
 n_stas = [5, 10, 20, 50]
 cw_mins = [7, 15, 31, 63, 127, 255, 511, 1023]
-sim_sec = [2, 5]
+sim_sec = [2, 5, 10]
 ns3_path = os.path.abspath("../ns3")
 
 # Helper to format
