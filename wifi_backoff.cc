@@ -27,61 +27,7 @@ MacToString(const Mac48Address &mac)
   return oss.str();
 }
 
-// ---------------------- UDP Sender ----------------------
-class UdpSeqTsSender : public Application
-{
-public:
-  void Setup(Ipv4Address dst, uint16_t port, uint32_t pktSize, DataRate rate, uint8_t tos)
-  {
-    m_dst = InetSocketAddress(dst, port);
-    m_pktSize = pktSize;
-    m_rate = rate;
-    m_tos = tos;
-  }
-
-private:
-  Ptr<Socket> m_socket;
-  Address     m_dst;
-  uint32_t    m_pktSize{1200};
-  DataRate    m_rate{"5Mbps"};
-  uint8_t     m_tos{0};
-  Time        m_next;
-  uint32_t    m_seq{0};
-
-  virtual void StartApplication()
-  {
-    m_socket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
-    m_socket->Connect(m_dst);
-    m_socket->SetIpTos(m_tos);
-    m_next = Seconds((double)m_pktSize * 8 / m_rate.GetBitRate());
-    Simulator::Schedule(Seconds(1.0), &UdpSeqTsSender::SendOne, this);
-  }
-
-  void SendOne()
-  {
-    Ptr<Packet> p = Create<Packet>(m_pktSize - SeqTsHeader().GetSerializedSize());
-    SeqTsHeader h;
-    h.SetSeq(++m_seq);
-    p->AddHeader(h);
-
-    TimestampTag ts;
-    ts.SetTimestamp(Simulator::Now());
-    p->AddPacketTag(ts);
-
-    m_socket->Send(p);
-    Simulator::Schedule(m_next, &UdpSeqTsSender::SendOne, this);
-  }
-};
-
 // ---------------------- Global Stat Structs ----------------------
-struct AppStats
-{
-  uint64_t rxBytes{0};
-  uint64_t rxPkts{0};
-  double   delaySumUs{0.0};
-};
-static AppStats g_app;
-
 struct MacDelayStats
 {
   uint64_t count{0};
@@ -145,23 +91,6 @@ AcName(uint8_t ac)
 }
 
 // ---------------------- Callbacks ----------------------
-
-static void
-ApRxCallback(Ptr<Socket> sock)
-{
-  Address from;
-  while (Ptr<Packet> p = sock->RecvFrom(from))
-  {
-    g_app.rxBytes += p->GetSize();
-    g_app.rxPkts++;
-
-    TimestampTag ts;
-    if (p->PeekPacketTag(ts))
-    {
-      g_app.delaySumUs += (Simulator::Now() - ts.GetTimestamp()).GetMicroSeconds();
-    }
-  }
-}
 
 static void
 BackoffTraceCb(std::string context, uint32_t backoff, uint8_t ac)
@@ -416,12 +345,24 @@ main(int argc, char *argv[])
   Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyRxEnd",
                   MakeCallback(&PhyRxEndOkCb));
 
+  // ============================================================================
+  // [FIX] Saturated Traffic Model (Bianchi Assumption)
+  // 1. Large MAC Queue to prevent buffer drops (only collision drops)
+  Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
+  
+  // 2. Fixed PHY Rate (Already done above: ConstantRateWifiManager)
+
+  // 3. Saturated Traffic Source (OnOffApplication with High Rate)
+  // ============================================================================
+
   // UDP App
-  uint16_t   port = 3000;
-  Ptr<Socket> rxSock =
-      Socket::CreateSocket(ap.Get(0), UdpSocketFactory::GetTypeId());
-  rxSock->Bind(InetSocketAddress(Ipv4Address::GetAny(), port));
-  rxSock->SetRecvCallback(MakeCallback(&ApRxCallback));
+  uint16_t port = 5000;
+  
+  // AP as Sink
+  PacketSinkHelper sink("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
+  ApplicationContainer sinkApps = sink.Install(ap.Get(0));
+  sinkApps.Start(Seconds(0.0));
+  sinkApps.Stop(Seconds(simTime + 1.0));
 
   // Map AC to ToS (DSCP)
   uint8_t tos = 0x00; // AC_BE
@@ -433,16 +374,24 @@ main(int argc, char *argv[])
   default: tos = 0x00; break; // AC_BE
   }
 
+  // STAs as Saturated Sources
+  OnOffHelper onoff("ns3::UdpSocketFactory", InetSocketAddress(apIf.GetAddress(0), port));
+  onoff.SetAttribute("PacketSize", UintegerValue(pktSize));
+  onoff.SetAttribute("DataRate", DataRateValue(DataRate("50Mbps"))); // Over-provisioned rate
+  onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+  onoff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+  onoff.SetAttribute("Tos", UintegerValue(tos));
+
+  // [FIX] Randomize start time to avoid synchronization
+  Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable>();
+  
+  ApplicationContainer srcApps;
   for (uint32_t i = 0; i < nSta; ++i)
   {
-    Ptr<UdpSeqTsSender> app = CreateObject<UdpSeqTsSender>();
-    app->Setup(apIf.GetAddress(0), port, pktSize, DataRate(rateStr), tos);
-    sta.Get(i)->AddApplication(app);
-    
-    // [FIX] Randomize start time to avoid synchronization
-    Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable>();
-    app->SetStartTime(Seconds(var->GetValue(0.0, 1.0)));
-    app->SetStopTime(Seconds(simTime));
+    ApplicationContainer app = onoff.Install(sta.Get(i));
+    app.Start(Seconds(var->GetValue(0.0, 0.1))); // Small random jitter
+    app.Stop(Seconds(simTime));
+    srcApps.Add(app);
   }
 
   // Run
@@ -451,9 +400,17 @@ main(int argc, char *argv[])
 
   // ====== 統計輸出 ======
   double duration   = simTime - 1.0; 
-  double throughput = duration > 0 ? (g_app.rxBytes * 8.0) / duration / 1e6 : 0.0;
-  double avgAppDelayUs =
-      g_app.rxPkts ? (g_app.delaySumUs / g_app.rxPkts) : 0.0;
+  
+  // Calculate Throughput from PacketSink
+  uint64_t totalRxBytes = 0;
+  if (ap.Get(0)->GetNApplications() > 0) {
+      Ptr<PacketSink> psink = DynamicCast<PacketSink>(ap.Get(0)->GetApplication(0));
+      if (psink) {
+          totalRxBytes = psink->GetTotalRx();
+      }
+  }
+  
+  double throughput = duration > 0 ? (totalRxBytes * 8.0) / duration / 1e6 : 0.0;
 
   double avgMacQueueDelayUs =
       g_macQueueDelay.count ? (g_macQueueDelay.sumUs / g_macQueueDelay.count) : 0.0;
@@ -480,9 +437,8 @@ main(int argc, char *argv[])
   std::cout << "\n=== RESULTS (APP) ===\n";
   std::cout << "STAs: " << nSta << " , SimTime: " << simTime << " s\n";
   std::cout << "CWmin Setting: " << cwMin << " (for " << queueName << ")\n";
-  std::cout << "RxPkts=" << g_app.rxPkts
+  std::cout << "RxPkts=" << (totalRxBytes / pktSize) // Approximate
             << " , Throughput=" << throughput << " Mbps\n";
-  //std::cout << "Avg One-way Delay (UDP) = " << avgAppDelayUs << " us\n";
 
   std::cout << "\n=== RESULTS (MAC) ===\n";
   std::cout << "TX MPDUs (incl. retries): " << g_macTxMpdu << "\n";
