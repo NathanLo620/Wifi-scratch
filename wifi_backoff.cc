@@ -4,7 +4,7 @@
 #include "ns3/wifi-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/applications-module.h"
-#include "ns3/txop.h" // [CRITICAL] for Txop
+#include "ns3/txop.h"
 
 #include <iostream>
 #include <sstream>
@@ -90,25 +90,14 @@ struct MacDelayStats
 static MacDelayStats g_macQueueDelay;
 static MacDelayStats g_macAirDelay;
 
-// ---- MAC 封包 key ----
-struct MacKey
-{
-  uint32_t nodeId;
-  uint16_t seq;
-  bool operator==(const MacKey &o) const
-  {
-    return nodeId == o.nodeId && seq == o.seq;
-  }
-};
-struct MacKeyHash
-{
-  size_t operator()(const MacKey &k) const
-  {
-    return std::hash<uint32_t>()(k.nodeId) ^ (std::hash<uint16_t>()(k.seq) << 1);
-  }
-};
+// ---- 追蹤容器 ----
+static std::unordered_map<uint32_t, uint32_t> g_lastCwByNode;
+static std::unordered_map<uint64_t, uint32_t> g_cwInitByPkt;   // Key: Packet UID
+static std::unordered_map<uint64_t, uint32_t> g_txCountByPkt;  // Key: Packet UID
+static std::unordered_set<uint64_t>           g_seenFirstTx;   // Key: Packet UID
+static std::unordered_map<uint64_t, Time>     g_enqTimeByPkt;  // Key: Packet UID
 
-// ---- 空中路徑 key ----
+// Air Delay 仍需使用 (SA, Seq) 因為接收端只看得到 Header
 struct AirKey
 {
   std::string sa;
@@ -121,11 +110,6 @@ struct AirKey
     return seq < o.seq;
   }
 };
-
-// ---- 追蹤容器 ----
-static std::unordered_map<uint32_t, uint32_t> g_lastCwByNode;
-static std::unordered_map<MacKey, uint32_t, MacKeyHash> g_cwInitByPkt;
-static std::unordered_map<MacKey, Time, MacKeyHash>     g_enqTimeByPkt;
 
 static std::map<AirKey, Time> g_airTxTime;
 static std::set<AirKey> g_airRxUnique;
@@ -198,21 +182,23 @@ CwTraceCb(std::string ctx, uint32_t cw, uint8_t ac)
 static void
 EnqueueCb(std::string ctx, Ptr<const WifiMpdu> mpdu)
 {
-  WifiMacHeader hdr = mpdu->GetHeader();
-  if (!hdr.IsData()) return;
-
+  // [FIX] Use Packet UID instead of Sequence Number
+  Ptr<const Packet> p = mpdu->GetPacket();
+  if (!p) return;
+  
+  uint64_t uid = p->GetUid();
   uint32_t nid = ExtractNodeId(ctx);
-  MacKey   key{nid, hdr.GetSequenceNumber()};
 
-  if (!g_cwInitByPkt.count(key))
+  if (!g_cwInitByPkt.count(uid))
   {
     uint32_t cw0 = 0;
     auto     it  = g_lastCwByNode.find(nid);
     if (it != g_lastCwByNode.end()) cw0 = it->second;
-    g_cwInitByPkt[key] = cw0;
+    g_cwInitByPkt[uid] = cw0;
   }
 
-  g_enqTimeByPkt[key] = Simulator::Now();
+  g_enqTimeByPkt[uid] = Simulator::Now();
+  g_seenFirstTx.erase(uid);
 }
 
 static void
@@ -225,25 +211,28 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
   if (hdr.GetAddr1().IsBroadcast()) return;
 
   uint32_t nid = ExtractNodeId(ctx);
-  MacKey   key{nid, hdr.GetSequenceNumber()};
+  uint64_t uid = p->GetUid(); // [FIX] Use Packet UID
 
   ++g_macTxMpdu;
+  auto &cnt = g_txCountByPkt[uid];
+  ++cnt;
   
-  if (!hdr.IsRetry())
+  if (!g_seenFirstTx.count(uid))
   {
+    g_seenFirstTx.insert(uid);
     ++g_macTxUnique;
-    
-    // Calculate Queue Delay for first transmission
-    auto itEnq = g_enqTimeByPkt.find(key);
-    if (itEnq != g_enqTimeByPkt.end())
-    {
-      double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
-      g_macQueueDelay.sumUs += dUs;
-      g_macQueueDelay.count++;
-    }
   }
 
-  if (nid != 0) // Assuming node 0 is AP, and we only care about STA's Tx time
+  // Calculate Queue Delay (only for the first transmission attempt of this UID)
+  auto itEnq = g_enqTimeByPkt.find(uid);
+  if (itEnq != g_enqTimeByPkt.end() && cnt == 1u)
+  {
+    double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
+    g_macQueueDelay.sumUs += dUs;
+    g_macQueueDelay.count++;
+  }
+
+  if (nid != 0)
   {
     AirKey akey;
     akey.sa  = MacToString(hdr.GetAddr2());
@@ -281,9 +270,9 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 5;
-  double      simTime = 2.0;
-  std::string rateStr = "5Mbps"; 
+  uint32_t    nSta    = 10;
+  double      simTime = 10.0;
+  std::string rateStr = "3Mbps"; 
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
   uint32_t    cwMin   = 7;
@@ -500,10 +489,8 @@ main(int argc, char *argv[])
   std::cout << "TX unique MAC packets:    " << g_macTxUnique << "\n";
   std::cout << "RX unique (SA,Seq):       " << macRxUnique << "\n";
   std::cout << "MAC Packet Loss Rate:     " << macLossRate << " %\n";
-  std::cout << "Avg MAC Queue Delay (Enq->1stTx): "
-            << avgMacQueueDelayUs << " us\n";
-  std::cout << "Avg MAC Air Delay (TxBegin->RxEndOk): "
-            << avgMacAirDelayUs << " us\n";
+  std::cout << "Avg MAC Queue Delay (Enq->1stTx): " << avgMacQueueDelayUs << " us\n";
+  std::cout << "Avg MAC Air Delay (TxBegin->RxEndOk): " << avgMacAirDelayUs << " us\n";
   std::cout << "Avg transmissions/pkt:    " << avgTxPerPkt << "\n";
   std::cout << "Avg retransmissions/pkt:  " << avgRetryPerPkt << "\n";
 

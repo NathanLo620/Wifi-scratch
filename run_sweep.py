@@ -6,7 +6,7 @@ import os
 # Configuration
 n_stas = [5, 10, 20, 50]
 cw_mins = [7, 15, 31, 63, 127, 255, 511, 1023]
-sim_sec = [2, 5, 10]
+sim_sec = [10]
 ns3_path = os.path.abspath("../ns3")
 
 # Helper to format
@@ -21,13 +21,17 @@ def parse_val(pattern, output):
     return "N/A"
 
 for sim in sim_sec:
-    print(f"\n### Simulation Time: {sim}s")
-    print("| nSta | CWmin | Retransmissions | Queue Delay (us) | Air Delay (us) | Packet Loss (%) | Throughput (Mbps) |")
-    print("|---|---|---|---|---|---|---|")
+    print(f"\n### Simulation Time: {sim}s (Saturated Throughput: 12.25Mbps Total)")
+    print("| nSta | DataRate (Mbps) | CWmin | Retransmissions | Queue Delay (us) | Air Delay (us) | Packet Loss (%) | Throughput (Mbps) |")
+    print("|---|---|---|---|---|---|---|---|")
     
     for n in n_stas:
+        # Calculate rate per STA to achieve 12.25 Mbps total
+        rate_val = 12.25 / n
+        rate_str = f"{rate_val:.4f}Mbps"
+        
         for cw in cw_mins:
-            cmd = [ns3_path, "run", f"wifi_backoff --nSta={n} --cwMin={cw} --sim={sim}"]
+            cmd = [ns3_path, "run", f"wifi_backoff --nSta={n} --cwMin={cw} --sim={sim} --rate={rate_str}"]
             
             try:
                 # Run ns-3
@@ -48,12 +52,13 @@ for sim in sim_sec:
                 loss = parse_val(r"MAC Packet Loss Rate:\s+([\d\.]+)", output)
                 throughput = parse_val(r"Throughput=([\d\.]+)", output)
                 
-                print(f"| {n} | {cw} | {fmt(retries, 4)} | {fmt(delay)} | {fmt(air_delay)} | {fmt(loss)} | {fmt(throughput)} |")
+                print(f"| {n} | {rate_val:.4f} | {cw} | {fmt(retries, 4)} | {fmt(delay)} | {fmt(air_delay)} | {fmt(loss)} | {fmt(throughput)} |")
                 sys.stdout.flush()
                 
             except subprocess.CalledProcessError as e:
-                print(f"| {n} | {cw} | Error | NS-3 exited with code {e.returncode} | N/A | N/A | N/A |")
+                print(f"| {n} | {rate_val:.4f} | {cw} | Error | NS-3 exited with code {e.returncode} | N/A | N/A | N/A |")
+                # print(e.stderr) # Debug
             except Exception as e:
-                print(f"| {n} | {cw} | Error | {e} | N/A | N/A | N/A |")
+                print(f"| {n} | {rate_val:.4f} | {cw} | Error | {e} | N/A | N/A | N/A |")
 
 print("\nDone.")
