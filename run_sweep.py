@@ -6,7 +6,8 @@ import os
 # Configuration
 n_stas = [5, 10, 20, 50]
 cw_mins = [7, 15, 31, 63, 127, 255, 511, 1023]
-sim_sec = [2, 10]
+#sim_sec = [2, 10]
+sim_sec = [10]
 ns3_path = os.path.abspath("../ns3")
 
 # Helper to format
@@ -21,7 +22,7 @@ def parse_val(pattern, output):
     return "N/A"
 
 for sim in sim_sec:
-    print(f"\n### Simulation Time: {sim}s (Bianchi Saturated Model: 50Mbps/node)")
+    print(f"\n### Simulation Time: {sim}s (Bianchi Saturated Model: 5Mbps/node)")
     print("| nSta | CWmin | Retransmissions | Queue Delay (us) | Air Delay (us) | Packet Loss (%) | Throughput (Mbps) |")
     print("|---|---|---|---|---|---|---|")
     
