@@ -280,14 +280,16 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 20;
+  uint32_t    nSta    = 10;
   double      simTime = 10.0;
+  std::string dataRate = "0.5Mbps";
   uint32_t    pktSize = 1200;
   bool        enableRts = false;
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of STAs", nSta);
   cmd.AddValue("sim", "Simulation time", simTime);
+  cmd.AddValue("dataRate", "UDP sending rate (e.g. 1Mbps)", dataRate);
   cmd.AddValue("pkt", "Packet size (bytes)", pktSize);
   cmd.AddValue("enableRts", "Enable RTS/CTS", enableRts);
   cmd.Parse(argc, argv);
@@ -395,7 +397,7 @@ main(int argc, char *argv[])
   // Sources: Multi-AC per STA (BE + BK + VI + VO)
   OnOffHelper onoff("ns3::UdpSocketFactory", InetSocketAddress(apIf.GetAddress(0), port));
   onoff.SetAttribute("PacketSize", UintegerValue(pktSize));
-  onoff.SetAttribute("DataRate", DataRateValue(DataRate("10Mbps"))); // Lower rate to avoid instant saturation
+  onoff.SetAttribute("DataRate", DataRateValue(DataRate(dataRate))); // Lower rate to avoid instant saturation
   onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
   onoff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
   
