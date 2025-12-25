@@ -38,10 +38,24 @@ static MacDelayStats g_macAirDelay;
 
 // ---- 追蹤容器 ----
 static std::unordered_map<uint32_t, uint32_t> g_lastCwByNode;
-static std::unordered_map<uint64_t, uint32_t> g_cwInitByPkt;   // Key: Packet UID
-static std::unordered_map<uint64_t, uint32_t> g_txCountByPkt;  // Key: Packet UID
-static std::unordered_set<uint64_t>           g_seenFirstTx;   // Key: Packet UID
-static std::unordered_map<uint64_t, Time>     g_enqTimeByPkt;  // Key: Packet UID
+
+// [FIX] Tracking by (SA, Sequence) for 802.11n retransmissions
+struct TxKey
+{
+  std::string sa;
+  uint16_t    seq;
+  
+  bool operator<(const TxKey &o) const
+  {
+      if (sa < o.sa) return true;
+      if (sa > o.sa) return false;
+      return seq < o.seq;
+  }
+};
+
+static std::map<TxKey, uint32_t> g_txCountBySeq;  // Key: (SA, Seq)
+static std::set<TxKey>           g_seenFirstTx;   // Key: (SA, Seq)
+static std::map<TxKey, Time>     g_enqTimeBySeq;  // Key: (SA, Seq)
 
 // Air Delay 仍需使用 (SA, Seq) 因為接收端只看得到 Header
 struct AirKey
@@ -111,23 +125,18 @@ CwTraceCb(std::string ctx, uint32_t cw, uint8_t ac)
 static void
 EnqueueCb(std::string ctx, Ptr<const WifiMpdu> mpdu)
 {
-  // [FIX] Use Packet UID instead of Sequence Number
-  Ptr<const Packet> p = mpdu->GetPacket();
-  if (!p) return;
-  
-  uint64_t uid = p->GetUid();
-  uint32_t nid = ExtractNodeId(ctx);
-
-  if (!g_cwInitByPkt.count(uid))
-  {
-    uint32_t cw0 = 0;
-    auto     it  = g_lastCwByNode.find(nid);
-    if (it != g_lastCwByNode.end()) cw0 = it->second;
-    g_cwInitByPkt[uid] = cw0;
+  // [FIX] Use (SA, Seq) instead of Packet UID
+  WifiMacHeader hdr;
+  if (mpdu->GetHeader().IsData()) {
+      hdr = mpdu->GetHeader();
+      TxKey key;
+      key.sa = MacToString(hdr.GetAddr2());
+      key.seq = hdr.GetSequenceNumber();
+      
+      g_enqTimeBySeq[key] = Simulator::Now();
+      // Reset seen status if seq number reused (though unlikely in short sim)
+      g_seenFirstTx.erase(key);
   }
-
-  g_enqTimeByPkt[uid] = Simulator::Now();
-  g_seenFirstTx.erase(uid);
 }
 
 static void
@@ -140,21 +149,25 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
   if (hdr.GetAddr1().IsBroadcast()) return;
 
   uint32_t nid = ExtractNodeId(ctx);
-  uint64_t uid = p->GetUid(); // [FIX] Use Packet UID
+  // uint64_t uid = p->GetUid(); // [REMOVED]
+
+  TxKey key;
+  key.sa = MacToString(hdr.GetAddr2());
+  key.seq = hdr.GetSequenceNumber();
 
   ++g_macTxMpdu;
-  auto &cnt = g_txCountByPkt[uid];
+  auto &cnt = g_txCountBySeq[key];
   ++cnt;
   
-  if (!g_seenFirstTx.count(uid))
+  if (!g_seenFirstTx.count(key))
   {
-    g_seenFirstTx.insert(uid);
+    g_seenFirstTx.insert(key);
     ++g_macTxUnique;
   }
 
   // Calculate Queue Delay (only for the first transmission attempt of this UID)
-  auto itEnq = g_enqTimeByPkt.find(uid);
-  if (itEnq != g_enqTimeByPkt.end() && cnt == 1u)
+  auto itEnq = g_enqTimeBySeq.find(key);
+  if (itEnq != g_enqTimeBySeq.end() && cnt == 1u)
   {
     double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
     g_macQueueDelay.sumUs += dUs;
@@ -199,12 +212,13 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 10;
+  uint32_t    nSta    = 50;
   double      simTime = 10.0;
   std::string rateStr = "3Mbps"; 
   uint32_t    pktSize = 1200;
   uint8_t     ac      = 0;
   uint32_t    cwMin   = 7;
+  bool        enableRts = true;
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of STAs", nSta);
@@ -213,6 +227,7 @@ main(int argc, char *argv[])
   cmd.AddValue("pkt", "Packet size (bytes)", pktSize);
   cmd.AddValue("ac", "Access Category (0=BE,1=BK,2=VI,3=VO)", ac);
   cmd.AddValue("cwMin", "Initial Contention Window size", cwMin);
+  cmd.AddValue("enableRts", "Enable RTS/CTS", enableRts);
   cmd.Parse(argc, argv);
 
   // Create Nodes
@@ -226,6 +241,7 @@ main(int argc, char *argv[])
   phy.SetChannel(chan.Create());
 
   WifiHelper wifi;
+  /*
   wifi.SetStandard(WIFI_STANDARD_80211a);
 
  //[FIX] Constant Rate to remove rate control variance
@@ -233,7 +249,17 @@ main(int argc, char *argv[])
                               "DataMode", StringValue("OfdmRate24Mbps"),
                             "ControlMode", StringValue("OfdmRate24Mbps"),
                              "RtsCtsThreshold", StringValue("1000"));
+*/ 
 
+  if(!enableRts)
+    Config::SetDefault ("ns3::WifiRemoteStationManager::RtsCtsThreshold", StringValue ("999999"));
+  else
+    Config::SetDefault ("ns3::WifiRemoteStationManager::RtsCtsThreshold", StringValue ("0"));
+
+  wifi.SetStandard(WIFI_STANDARD_80211n);
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                               "DataMode", StringValue("HtMcs7"),
+                               "ControlMode", StringValue("HtMcs7")); 
 
   WifiMacHelper mac;
   Ssid          ssid("ns3-wifi");
