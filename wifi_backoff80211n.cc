@@ -30,6 +30,7 @@ MacToString(const Mac48Address &mac)
 // ---------------------- Global Stat Structs ----------------------
 struct AcStats
 {
+  uint64_t txApp{0};    // New: Application Layer Tx Count
   uint64_t txMpdu{0};
   uint64_t txUnique{0};
   uint64_t rxUnique{0};
@@ -38,6 +39,8 @@ struct AcStats
   uint64_t countQueueDelay{0};
   double   sumAirDelay{0.0};
   uint64_t countAirDelay{0};
+  double   sumE2EDelay{0.0};
+  uint64_t countE2EDelay{0};
   
   uint32_t minCw{99999}; // Track observed Min CW
   uint32_t maxCw{0};
@@ -47,7 +50,7 @@ static std::unordered_map<uint32_t, uint32_t> g_lastCwByNode;
 
 // 0=BE, 1=BK, 2=VI, 3=VO
 static std::vector<AcStats> g_stats(4);
-static double g_warmupTime = 0.5;
+static double g_warmupTime = 5;
 
 // Map TID to AC Index
 // TID: 0(BE), 1(BK), 2(BK), 3(BE), 4(VI), 5(VI), 6(VO), 7(VO)
@@ -89,9 +92,8 @@ struct TxKey
   }
 };
 
-static std::map<TxKey, uint32_t> g_txCountBySeq;  // Key: (SA, Seq, TID)
-static std::set<TxKey>           g_seenFirstTx;   // Key: (SA, Seq, TID)
-static std::map<TxKey, Time>     g_enqTimeBySeq;  // Key: (SA, Seq, TID)
+static std::map<uint64_t, Time> g_packetEnqueueTime; // Key: Packet UID -> Enqueue Time (True Start Time)
+static std::set<uint64_t>      g_macSeenUids;       // Key: Packet UID (To count Unique MAC Tx)
 // Helper to know which AC a Key belongs to
 static std::map<TxKey, uint8_t>  g_keyToAc; 
 
@@ -165,25 +167,53 @@ CwTraceCb(std::string context, uint32_t cw, uint8_t extra)
 }
 
 static void
+AppTxCb(std::string context, Ptr<const Packet> p)
+{
+    if (Simulator::Now().GetSeconds() < g_warmupTime) return;
+    
+    // Context is /NodeList/x/ApplicationList/y/$ns3::OnOffApplication/Tx
+    // We map Application Index to AC.
+    // In SetupTraffic loop: App 0=BE, 1=BK, 2=VI, 3=VO
+    
+    // Extract Application Index
+    // Context format: ".../ApplicationList/<Index>"
+    size_t start = context.find("/ApplicationList/") + 17;
+    std::string numStr = context.substr(start);
+    
+    uint32_t appIdx = 0;
+    try {
+        appIdx = std::stoi(numStr);
+    } catch (...) {
+        return; 
+    }
+    
+    // [FIX] Use Modulo to handle multiple Stations
+    // 0,1,2,3 -> Sta 0
+    // 4,5,6,7 -> Sta 1 ...
+    uint8_t ac = 0;
+    switch(appIdx % 4) {
+        case 0: ac = 0; break; // BE
+        case 1: ac = 1; break; // BK
+        case 2: ac = 2; break; // VI
+        case 3: ac = 3; break; // VO
+        default: ac = 0; break;
+    }
+    
+    g_stats[ac].txApp++;
+}
+
+static void
 EnqueueCb(std::string context, Ptr<const WifiMpdu> mpdu)
 {
-  WifiMacHeader hdr;
-  if (mpdu->GetHeader().IsData()) {
-      hdr = mpdu->GetHeader();
-      TxKey key;
-      key.sa = MacToString(hdr.GetAddr2());
-      key.seq = hdr.GetSequenceNumber();
-      key.tid = 0;
-      if (hdr.IsQosData()) key.tid = hdr.GetQosTid();
-      
-      uint8_t ac = 0;
-      if (hdr.IsQosData()) {
-          ac = TidToAc(hdr.GetQosTid());
+  if (Simulator::Now().GetSeconds() < g_warmupTime) return;
+
+  Ptr<const Packet> p = mpdu->GetPacket();
+  if (p) {
+      uint64_t uid = p->GetUid();
+      // Record Enqueue Time if not already recorded (first enqueue)
+      if (g_packetEnqueueTime.find(uid) == g_packetEnqueueTime.end()) {
+          g_packetEnqueueTime[uid] = Simulator::Now();
       }
-      
-      g_enqTimeBySeq[key] = Simulator::Now();
-      g_keyToAc[key] = ac;
-      g_seenFirstTx.erase(key);
   }
 }
 
@@ -209,26 +239,17 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
   if (g_keyToAc.count(key)) ac = g_keyToAc[key];
   else if (hdr.IsQosData()) ac = TidToAc(hdr.GetQosTid());
 
-  g_stats[ac].txMpdu++;
-  
-  auto &cnt = g_txCountBySeq[key];
-  ++cnt;
-  
-  if (!g_seenFirstTx.count(key))
-  {
-    g_seenFirstTx.insert(key);
-    g_stats[ac].txUnique++;
-  }
+  g_stats[ac].txMpdu++; // Count EVERY transmission attempt (including retries)
 
-  // Calculate Queue Delay (only for the first transmission attempt of this UID)
-  auto itEnq = g_enqTimeBySeq.find(key);
-  if (itEnq != g_enqTimeBySeq.end() && cnt == 1u)
+  // Track Unique Packets (MAC Layer Context)
+  // This is used to calculate Avg Retries = (Total MPDU / Unique MAC) - 1
+  uint64_t uid = p->GetUid();
+  if (g_macSeenUids.find(uid) == g_macSeenUids.end())
   {
-    double dUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
-    g_stats[ac].sumQueueDelay += dUs;
-    g_stats[ac].countQueueDelay++;
+      g_macSeenUids.insert(uid);
+      g_stats[ac].txUnique++;
   }
-
+  
   if (ExtractNodeId(ctx) != 0) // Uplink only
   {
     AirKey akey;
@@ -240,17 +261,32 @@ PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
 }
 
 static void
-PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
+MonitorSnifferRxCb(std::string key,
+                   Ptr<const Packet> packet,
+                   uint16_t channelFreqMhz,
+                   WifiTxVector txVector,
+                   MpduInfo mpduInfo,
+                   SignalNoiseDbm signalNoise,
+                   uint16_t staId)
+
 {
   WifiMacHeader hdr;
-  Ptr<Packet>   cp = p->Copy();
-  if (!cp->PeekHeader(hdr)) return;
+  Ptr<Packet> p = packet->Copy();
+  if (!p->PeekHeader(hdr)) return;
   if (!hdr.IsData()) return;
 
-  uint32_t nid = ExtractNodeId(ctx);
-  if (nid != 0) return; // Only process RX at AP (node 0)
-
+  // We only care about packets received BY the AP (Node 0)
+  // Context for MonitorSnifferRx is usually "/NodeList/x/..."
+  // We only connect Node 0, so this is safe. 
+  // But verifying Addr1 (RA) is AP's Mac is better.
+  // Converting AP Mac to string is expensive? 
+  // Let's rely on Connect path "/NodeList/0/..."
+  
   if (Simulator::Now().GetSeconds() < g_warmupTime) return;
+
+  uint32_t nid = ExtractNodeId(key);
+  // Ensure we are on Node 0
+  if (nid != 0) return;
 
   // Identify AC
   uint8_t ac = 0;
@@ -264,25 +300,40 @@ PhyRxEndOkCb(std::string ctx, Ptr<const Packet> p)
   akey.tid = 0;
   if (hdr.IsQosData()) akey.tid = hdr.GetQosTid();
 
+  // Calculate Air Delay
   auto it = g_airTxTime.find(akey);
-  if (it == g_airTxTime.end()) return; 
+  if (it != g_airTxTime.end()) {
+      double dUs = (Simulator::Now() - it->second).GetMicroSeconds();
+      g_stats[ac].sumAirDelay += dUs;
+      g_stats[ac].countAirDelay++;
+      g_airTxTime.erase(it);
+  }
 
-  double dUs = (Simulator::Now() - it->second).GetMicroSeconds();
-  g_stats[ac].sumAirDelay += dUs;
-  g_stats[ac].countAirDelay++;
+  // Calculate E2E Delay using Enqueue Time
+  uint64_t uid = packet->GetUid(); 
   
-  g_airRxUnique.insert(akey);
+  auto itEnq = g_packetEnqueueTime.find(uid);
+
+  if (itEnq != g_packetEnqueueTime.end()) {
+      double e2eUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
+      g_stats[ac].sumE2EDelay += e2eUs;
+      g_stats[ac].countE2EDelay++;
+      
+      // We can erase it to save memory, assuming 1-to-1 mapping
+      g_packetEnqueueTime.erase(itEnq);
+  }
+
+  // g_airRxUnique.insert(akey);
   g_stats[ac].rxUnique++;
-  g_airTxTime.erase(it);
 }
 
 // ---------------------- Main ----------------------
 int
 main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 10;
-  double      simTime = 10.0;
-  std::string dataRate = "0.5Mbps";
+  uint32_t    nSta    = 100;
+  double      simTime = 100.0;
+  std::string dataRate = "1Mbps";
   uint32_t    pktSize = 1200;
   bool        enableRts = false;
 
@@ -344,7 +395,7 @@ main(int argc, char *argv[])
   mob.SetPositionAllocator("ns3::RandomDiscPositionAllocator",
                            "X", StringValue("0.0"),
                            "Y", StringValue("0.0"),
-                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=3.0]"));
+                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=5.0]"));
   mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
   mob.Install(sta);
 
@@ -370,17 +421,19 @@ main(int argc, char *argv[])
     Config::Connect(pathC, MakeCallback(&CwTraceCb));
   }
 
-  // Enqueue 監聽
-  for (int i = 0; i < 4; ++i) {
-      Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/" + std::string(acName[i]) + "/Queue/Enqueue",
-                      MakeCallback(&EnqueueCb));
-  }
+  // Enqueue 監聽 (Enabled Fix)
+  Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/*/Queue/Enqueue",
+                 MakeCallback(&EnqueueCb));
+  
+  // App Tx 監聽 (Manual Connection in Loop)
+  // Config::Connect("/NodeList/*/ApplicationList/*/$ns3::OnOffApplication/Tx",
+  //                MakeCallback(&AppTxCb));
 
   Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyTxBegin",
                   MakeCallback(&PhyTxBeginCb));
 
-  Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyRxEnd",
-                  MakeCallback(&PhyRxEndOkCb));
+  Config::Connect("/NodeList/0/DeviceList/*/$ns3::WifiNetDevice/Phy/MonitorSnifferRx",
+                  MakeCallback(&MonitorSnifferRxCb));
 
   // Queue Size
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
@@ -409,29 +462,33 @@ main(int argc, char *argv[])
       // 1. BE Flow (Low Priority)
       onoff.SetAttribute("Tos", UintegerValue(0x00)); // AC_BE
       ApplicationContainer app1 = onoff.Install(sta.Get(i));
-      app1.Start(Seconds(var->GetValue(0.0, 0.1)));
+      app1.Start(Seconds(var->GetValue(0.0, 1)));
       app1.Stop(Seconds(simTime));
+      app1.Get(0)->TraceConnect("Tx", "/ApplicationList/" + std::to_string(4*i + 0), MakeCallback(&AppTxCb));
       srcApps.Add(app1);
 
       // 2. BK Flow (Background)
       onoff.SetAttribute("Tos", UintegerValue(0x20)); // AC_BK
       ApplicationContainer app2 = onoff.Install(sta.Get(i));
-      app2.Start(Seconds(var->GetValue(0.0, 0.1)));
+      app2.Start(Seconds(var->GetValue(0.0, 1)));
       app2.Stop(Seconds(simTime));
+      app2.Get(0)->TraceConnect("Tx", "/ApplicationList/" + std::to_string(4*i + 1), MakeCallback(&AppTxCb));
       srcApps.Add(app2);
 
       // 3. VI Flow (Video)
       onoff.SetAttribute("Tos", UintegerValue(0xa0)); // AC_VI
       ApplicationContainer app3 = onoff.Install(sta.Get(i));
-      app3.Start(Seconds(var->GetValue(0.0, 0.1)));
+      app3.Start(Seconds(var->GetValue(0.0, 1)));
       app3.Stop(Seconds(simTime));
+      app3.Get(0)->TraceConnect("Tx", "/ApplicationList/" + std::to_string(4*i + 2), MakeCallback(&AppTxCb));
       srcApps.Add(app3);
 
       // 4. VO Flow (Voice)
       onoff.SetAttribute("Tos", UintegerValue(0xc0)); // AC_VO
       ApplicationContainer app4 = onoff.Install(sta.Get(i));
-      app4.Start(Seconds(var->GetValue(0.0, 0.1)));
+      app4.Start(Seconds(var->GetValue(0.0, 1)));
       app4.Stop(Seconds(simTime));
+      app4.Get(0)->TraceConnect("Tx", "/ApplicationList/" + std::to_string(4*i + 3), MakeCallback(&AppTxCb));
       srcApps.Add(app4);
   }
 
@@ -451,19 +508,24 @@ main(int argc, char *argv[])
   for (int i = 0; i < 4; ++i) {
       double throughput = duration > 0 ? (g_stats[i].rxBytes * 8.0) / duration / 1e6 : 0.0;
       double avgTx = g_stats[i].txUnique > 0 ? (double)g_stats[i].txMpdu / g_stats[i].txUnique : 0.0;
-      double loss = g_stats[i].txUnique > 0 ? 
-          (double)(g_stats[i].txUnique > g_stats[i].rxUnique ? g_stats[i].txUnique - g_stats[i].rxUnique : 0) / g_stats[i].txUnique * 100.0 : 0.0;
-      double qDelay = g_stats[i].countQueueDelay ? g_stats[i].sumQueueDelay / g_stats[i].countQueueDelay : 0.0;
+      
+      // LOSS CALCULATION FIX: (AppTx - Rx) / AppTx
+      uint64_t txApp = g_stats[i].txApp;
+      uint64_t rx = g_stats[i].rxUnique;
+      double loss = txApp > 0 ? (double)(txApp > rx ? txApp - rx : 0) / txApp * 100.0 : 0.0;
+
       double aDelay = g_stats[i].countAirDelay ? g_stats[i].sumAirDelay / g_stats[i].countAirDelay : 0.0;
+      double eDelay = g_stats[i].countE2EDelay ? g_stats[i].sumE2EDelay / g_stats[i].countE2EDelay : 0.0;
 
       std::cout << "--- AC_" << acLabel[i] << " ---\n";
+      std::cout << "  App Tx Packets:   " << txApp << "\n";
       std::cout << "  Observed Min CW:  " << g_stats[i].minCw << "\n";
       std::cout << "  Observed Max CW:  " << g_stats[i].maxCw << "\n";
       std::cout << "  Throughput:       " << throughput << " Mbps\n";
-      std::cout << "  Packet Loss:      " << loss << " %\n";
+      std::cout << "  Packet Loss:      " << loss << " % (App Layer)\n";
       std::cout << "  Avg Retries/Pkt:  " << (avgTx > 1.0 ? avgTx - 1.0 : 0.0) << "\n";
-      std::cout << "  Avg Queue Delay:  " << qDelay << " us\n";
       std::cout << "  Avg Air Delay:    " << aDelay << " us\n";
+      std::cout << "  Avg E2E Delay:    " << eDelay << " us (Enqueue -> Rx)\n";
   }
 
   Simulator::Destroy();
