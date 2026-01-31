@@ -3,100 +3,101 @@ import re
 import sys
 import os
 import csv
+import collections
 
 # Configuration
 n_stas = list(range(2, 41, 2)) # 2 to 40
-data_rates = ["1Mbps"]
+data_rates = ["0.1Mbps"]
 sim_sec = 10
 ns3_path = os.path.abspath("../ns3")
-output_csv = "EDCA_Sweep_Sta_1Mbps_CTS.csv"
+output_csv = "EDCA_Sweep_Sta_0.1Mbps.csv"
 
-# Result Storage
-results = []
-
-def parse_val(pattern, text):
+def parse_val(pattern, text, default=0.0):
     m = re.search(pattern, text)
     if m:
         return float(m.group(1))
-    return 0.0
+    return default
 
-def parse_ac_stats(output, ac_name):
-    """Parses stats for a specific AC block from stdout"""
-    # Regex to find the block for specific AC
-    # e.g. --- AC_BE --- ... (until next --- or end)
-    pattern = re.compile(f"AC_{ac_name}(.*?)(?=AC_|$)", re.DOTALL)
-    m = pattern.search(output)
-    if not m:
-        return {}
+def parse_output(output):
+    """
+    Parses the full simulation output and returns a nested dictionary:
+    stats[ac][metric] = value
     
-    block = m.group(1)
-    
-    stats = {}
-    stats = {}
-    stats["Throughput"] = parse_val(r"MacThroughput:\s+([\d\.]+) Mbps", block)
-    stats["Loss"] = parse_val(r"Packet Loss:\s+([\d\.]+) %", block)
-    stats["Retransmissions"] = parse_val(r"AvgRetries/MPDU:\s+([\d\.]+)", block)
-    stats["ServiceTime"] = parse_val(r"AvgE2E Delay:\s+([\d\.]+) us", block)
-    stats["AirDelay"] = parse_val(r"AvgAirDelay:\s+([\d\.]+) us", block)
+    NOTE: MAC_Access_Delay = MAC enqueue -> successful ACK (standard EDCA metric)
+    """
+    stats = collections.defaultdict(lambda: {
+        "MAC_Throughput_Mbps": 0.0,
+        "Loss_Pct": 0.0,
+        "Retransmissions": 0.0,
+        "MAC_Access_Delay_us": 0.0,  # Renamed from E2E_Delay_us
+        "Queue_Delay_us": 0.0,
+        "Access_Delay_us": 0.0,
+    })
+
+    # Parse Helper Stats Block (=== WifiTxStatsHelper ===)
+    helper_ac_blocks = re.findall(r"(AC_[A-Z]{2}):\n\s+Successes:(.*?)(?=AC_|---|$)", output, re.DOTALL)
+    for ac_label, block in helper_ac_blocks:
+        ac = ac_label.replace("AC_", "")
+        stats[ac]["MAC_Throughput_Mbps"] = parse_val(r"Throughput:\s+([\d\.]+) Mbps", block)
+        stats[ac]["Loss_Pct"] = parse_val(r"Packet Loss:\s+([\d\.]+) %", block)
+        stats[ac]["Retransmissions"] = parse_val(r"Avg Retx/MPDU:\s+([\d\.]+)", block)
+        stats[ac]["Queue_Delay_us"] = parse_val(r"Avg Queue Delay:\s+([\d\.]+) us", block)
+        stats[ac]["Access_Delay_us"] = parse_val(r"Avg Access Delay:\s+([\d\.]+) us", block)
+        # MAC Access Delay (Enqueue -> ACK) - standard EDCA metric
+        stats[ac]["MAC_Access_Delay_us"] = parse_val(r"Avg MAC Delay:\s+([\d\.]+) us", block)
+
     return stats
 
 # Main Sweep
 print(f"Starting Sweep. Results will be saved to {output_csv}")
-print("nSta, DataRate, AC, Throughput(Mbps), Loss(%), Retransmissions, ServiceTime(us), AirDelay(us)")
+headers = ["nSta", "DataRate", "AC", "MAC_Throughput_Mbps", "Loss_Pct", "Retransmissions", "MAC_Access_Delay_us", "Queue_Delay_us", "Access_Delay_us"]
+print(", ".join(headers))
 
 with open(output_csv, 'w', newline='') as csvfile:
     writer = csv.writer(csvfile)
-    writer.writerow(["nSta", "DataRate", "AC", "MAC_Throughput_Mbps", "Loss_Pct", "Retransmissions", "E2E_Delay_us", "AirDelay_us"])
+    writer.writerow(headers)
 
     for n in n_stas:
         for rate in data_rates:
-            print(f"Running nSta={n}, Rate={rate} (Averaging 5 Runs)...")
+            print(f"Running nSta={n}, Rate={rate} (Averaging 10 Runs)...")
             
-            # Storage for aggregation [Run1, Run2, ...]
-            # Structure: ac -> metric -> [values]
-            aggregator = { ac: { "MAC_Throughput_Mbps": [], "Loss_Pct": [], "Retransmissions": [], "E2E_Delay_us": [], "AirDelay_us": [] } for ac in ["BE", "BK", "VI", "VO"] }
+            # stats_agg[ac][metric] = [val1, val2, ...]
+            stats_agg = collections.defaultdict(lambda: collections.defaultdict(list))
             
-            for run_idx in range(1, 6): # Run 1 to 5
+            for run_idx in range(1, 10): # Run 1 to 5
                 cmd = [ns3_path, "run", f"wifi_backoff80211n --nSta={n} --dataRate={rate} --sim={sim_sec} --RngRun={run_idx}"]
                 
                 try:
                     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd(), check=True)
                     output = proc.stdout
                     
+                    run_stats = parse_output(output)
+                    
                     for ac in ["BE", "BK", "VI", "VO"]:
-                        stats = parse_ac_stats(output, ac)
-                        if stats:
-                            aggregator[ac]["MAC_Throughput_Mbps"].append(stats["Throughput"])
-                            aggregator[ac]["Loss_Pct"].append(stats["Loss"])
-                            aggregator[ac]["Retransmissions"].append(stats["Retransmissions"])
-                            aggregator[ac]["E2E_Delay_us"].append(stats["ServiceTime"]) 
-                            aggregator[ac]["AirDelay_us"].append(stats["AirDelay"])
+                        # Append numeric metrics
+                        for k in ["MAC_Throughput_Mbps", "Loss_Pct", "Retransmissions", "MAC_Access_Delay_us", "Queue_Delay_us", "Access_Delay_us"]:
+                            val = run_stats[ac].get(k, 0.0)
+                            stats_agg[ac][k].append(val)
 
                 except Exception as e:
                     print(f"Error running n={n}, rate={rate}, run={run_idx}: {e}")
 
             # Compute Average and Write
             for ac in ["BE", "BK", "VI", "VO"]:
-                def avg(lst): return sum(lst) / len(lst) if lst else 0.0
+                row = [n, rate, ac]
                 
-                if not aggregator[ac]["MAC_Throughput_Mbps"]: 
-                    continue
+                def get_avg(k):
+                    vals = stats_agg[ac][k]
+                    return sum(vals) / len(vals) if vals else 0.0
+                
+                row.append(f"{get_avg('MAC_Throughput_Mbps'):.5f}")
+                row.append(f"{get_avg('Loss_Pct'):.5f}")
+                row.append(f"{get_avg('Retransmissions'):.5f}")
+                row.append(f"{get_avg('MAC_Access_Delay_us'):.5f}")
+                row.append(f"{get_avg('Queue_Delay_us'):.5f}")
+                row.append(f"{get_avg('Access_Delay_us'):.5f}")
 
-                avg_tput = avg(aggregator[ac]["MAC_Throughput_Mbps"])
-                avg_loss = avg(aggregator[ac]["Loss_Pct"])
-                avg_retries = avg(aggregator[ac]["Retransmissions"])
-                avg_delay = avg(aggregator[ac]["E2E_Delay_us"])
-                avg_air = avg(aggregator[ac]["AirDelay_us"])
-
-                writer.writerow([n, rate, ac, f"{avg_tput:.5f}", f"{avg_loss:.5f}", f"{avg_retries:.5f}", f"{avg_delay:.5f}", f"{avg_air:.5f}"])
+                writer.writerow(row)
                 csvfile.flush()
-                
-
-                
-                # Plotting skipped as requested
-                # if scenario_data:
-                #    ...
-                    
-
 
 print("Sweep Completed.")

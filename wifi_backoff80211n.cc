@@ -11,6 +11,7 @@
 #include "ns3/timestamp-tag.h"
 #include "ns3/wifi-mpdu.h"
 #include "ns3/wifi-mac-header.h"
+#include "ns3/wifi-tx-stats-helper.h"
 
 #include <iostream>
 #include <sstream>
@@ -231,7 +232,7 @@ private:
   void StopApplication() override
   {
     m_running = false;
-    if (m_ev.IsRunning()) Simulator::Cancel(m_ev);
+    if (m_ev.IsPending()) Simulator::Cancel(m_ev);
     if (m_socket) { m_socket->Close(); m_socket = nullptr; }
   }
 
@@ -365,10 +366,17 @@ static void ApUdpRxCb(Ptr<Socket> sock)
     // Remove header for rxBytes accounting (payload+timestamp tag doesn't change size)
     p->RemoveHeader(h);
 
+    // Verify Timestamp (Filter out packets sent during warmup)
+    TimestampTag ts;
+    if (p->PeekPacketTag(ts))
+    {
+      if (ts.GetTimestamp().GetSeconds() < g_warmupTime) continue;
+    }
+
     g_stats[ac].appRx++;
     g_stats[ac].appRxBytes += p->GetSize();
 
-    TimestampTag ts;
+    // E2E Delay
     if (p->PeekPacketTag(ts))
     {
       double us = (Simulator::Now() - ts.GetTimestamp()).GetMicroSeconds();
@@ -381,11 +389,11 @@ static void ApUdpRxCb(Ptr<Socket> sock)
 // ---------------------- Main ----------------------
 int main(int argc, char *argv[])
 {
-  uint32_t    nSta    = 2;
+  uint32_t    nSta    = 30;
   double      simTime = 10.0;
   std::string dataRate = "0.5Mbps";  // per-AC per-STA rate
-  uint32_t    pktSize = 1200;
-  bool        enableRts = true;
+  uint32_t    pktSize = 1000;
+  bool        enableRts = false;
   uint32_t    queueMaxP = 400;
   double      warmup = 1.0;
 
@@ -422,12 +430,13 @@ int main(int argc, char *argv[])
   YansWifiChannelHelper chan = YansWifiChannelHelper::Default();
   YansWifiPhyHelper phy;
   phy.SetChannel(chan.Create());
+  phy.Set("ChannelSettings", StringValue("{36, 20, BAND_5GHZ, 0}")); // 5GHz
 
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211n);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
                                "DataMode", StringValue("HtMcs7"),
-                               "ControlMode", StringValue("HtMcs7"));
+                               "ControlMode", StringValue("HtMcs0"));
 
   WifiMacHelper mac;
   Ssid ssid("ns3-wifi-edca");
@@ -444,6 +453,13 @@ int main(int argc, char *argv[])
               "Ssid", SsidValue(ssid),
               "QosSupported", BooleanValue(true));
   NetDeviceContainer apDev = wifi.Install(phy, mac, ap);
+
+  // ---------------------- WifiTxStatsHelper (for comparison) ----------------------
+  WifiTxStatsHelper wifiTxStats;
+  wifiTxStats.Enable(staDevs);
+  wifiTxStats.Enable(apDev);
+  wifiTxStats.Start(Seconds(warmup));
+  wifiTxStats.Stop(Seconds(simTime));
 
   // Mobility
   MobilityHelper mob;
@@ -580,6 +596,113 @@ int main(int argc, char *argv[])
     std::cout << "  AvgAirDelay:       " << air << " us\n";
     std::cout << "  AvgE2E Delay:      " << e2e << " us\n\n";
   }
+
+  // ---------------------- WifiTxStatsHelper Output (Enhanced) ----------------------
+  // ---------------------- WifiTxStatsHelper Output (Enhanced) ----------------------
+  std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
+  std::cout << "Total Successes:       " << wifiTxStats.GetSuccesses() << "\n";
+  std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
+  std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";
+
+  // 1. Calculate Failure Statistics FIRST (needed for Loss calculation)
+  auto failureRecs = wifiTxStats.GetFailureRecords();
+  std::vector<uint64_t> helperFail(4, 0);
+  std::map<std::pair<uint8_t, WifiMacDropReason>, uint64_t> failByReason;
+  
+  for (const auto& [key, records] : failureRecs) {
+    for (const auto& rec : records) {
+      uint8_t ac = (rec.m_tid < 8) ? TidToAc(rec.m_tid) : 0;
+      helperFail[ac]++;
+      if (rec.m_dropReason.has_value()) {
+        failByReason[{ac, rec.m_dropReason.value()}]++;
+      }
+    }
+  }
+
+  // 2. Calculate Success Statistics and Print All
+  auto successRecs = wifiTxStats.GetSuccessRecords();
+  std::vector<uint64_t> helperSucc(4, 0), helperRetxs(4, 0);
+  std::vector<double> helperQueueDelay(4, 0.0), helperAccessDelay(4, 0.0), helperMacDelay(4, 0.0);
+  std::vector<uint64_t> helperCount(4, 0);
+  
+  for (const auto& [key, records] : successRecs) {
+    for (const auto& rec : records) {
+      uint8_t ac = (rec.m_tid < 8) ? TidToAc(rec.m_tid) : 0;
+      helperSucc[ac]++;
+      helperRetxs[ac] += rec.m_retransmissions;
+      
+      // Queue Delay: Enqueue -> TxStart (waiting in MAC queue)
+      double queueUs = (rec.m_txStartTime - rec.m_enqueueTime).GetMicroSeconds();
+      // Access Delay: TxStart -> Ack (channel access + transmission + ack)
+      double accessUs = (rec.m_ackTime - rec.m_txStartTime).GetMicroSeconds();
+      // Total MAC Delay: Enqueue -> Ack
+      double macUs = queueUs + accessUs;
+      
+      helperQueueDelay[ac] += queueUs;
+      helperAccessDelay[ac] += accessUs;
+      helperMacDelay[ac] += macUs;
+      helperCount[ac]++;
+    }
+  }
+  
+  std::cout << "--- Per-AC Success Statistics ---\n";
+  for (int ac = 0; ac < 4; ++ac) {
+    // If no successes but failures exist, we should still print?
+    // User sweep script regex depends on "AC_XX:" block. 
+    // If helperCount is 0, we skip. But if Failures exist, Loss is 100%. 
+    // We should print even if success=0 to show Loss=100%.
+    // However, delays will be 0.
+    
+    // Safety check for avg calculations
+    double avgQueue = (helperCount[ac]>0) ? (helperQueueDelay[ac] / helperCount[ac]) : 0.0;
+    double avgAccess = (helperCount[ac]>0) ? (helperAccessDelay[ac] / helperCount[ac]) : 0.0;
+    double avgMac = (helperCount[ac]>0) ? (helperMacDelay[ac] / helperCount[ac]) : 0.0;
+    double avgRetx = (helperCount[ac]>0) ? ((double)helperRetxs[ac] / helperCount[ac]) : 0.0;
+
+    // Helper-based Throughput and Loss
+    double hThr = (helperSucc[ac] * pktSize * 8.0) / duration / 1e6;
+    double hLoss = 0.0;
+    if ((helperSucc[ac] + helperFail[ac]) > 0) {
+      hLoss = (double)helperFail[ac] / (double)(helperSucc[ac] + helperFail[ac]) * 100.0;
+    }
+    
+    // Only print if there is ANY activity (Success OR Failure)
+    if (helperSucc[ac] == 0 && helperFail[ac] == 0) continue;
+
+    std::cout << "AC_" << AcName(ac) << ":\n";
+    std::cout << "  Successes:         " << helperSucc[ac] << "\n";
+    std::cout << "  Throughput:        " << hThr << " Mbps\n";
+    std::cout << "  Packet Loss:       " << hLoss << " %\n";
+    std::cout << "  Avg Retx/MPDU:     " << avgRetx << "\n";
+    std::cout << "  Avg Queue Delay:   " << avgQueue << " us (Enqueue->TxStart)\n";
+    std::cout << "  Avg Access Delay:  " << avgAccess << " us (TxStart->Ack)\n";
+    std::cout << "  Avg MAC Delay:     " << avgMac << " us (Total: Enqueue->Ack)\n\n";
+  }
+  
+  std::cout << "--- Per-AC Failure Statistics ---\n";
+  for (int ac = 0; ac < 4; ++ac) {
+    if (helperFail[ac] == 0) continue;
+    std::cout << "AC_" << AcName(ac) << " Failures: " << helperFail[ac] << "\n";
+  }
+  
+  // Print failure reasons
+  if (!failByReason.empty()) {
+    std::cout << "\n--- Failure Reasons by AC ---\n";
+    for (const auto& [key, count] : failByReason) {
+      uint8_t ac = key.first;
+      WifiMacDropReason reason = key.second;
+      std::string reasonStr;
+      switch (reason) {
+        case WIFI_MAC_DROP_REACHED_RETRY_LIMIT: reasonStr = "RETRY_LIMIT"; break;
+        case WIFI_MAC_DROP_FAILED_ENQUEUE: reasonStr = "FAILED_ENQUEUE"; break;
+        case WIFI_MAC_DROP_EXPIRED_LIFETIME: reasonStr = "EXPIRED_LIFETIME"; break;
+        case WIFI_MAC_DROP_QOS_OLD_PACKET: reasonStr = "QOS_OLD_PACKET"; break;
+        default: reasonStr = "OTHER"; break;
+      }
+      std::cout << "  AC_" << AcName(ac) << " " << reasonStr << ": " << count << "\n";
+    }
+  }
+  std::cout << "\n";
 
   Simulator::Destroy();
   return 0;
