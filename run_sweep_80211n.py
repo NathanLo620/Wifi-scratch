@@ -7,10 +7,10 @@ import collections
 
 # Configuration
 n_stas = list(range(2, 41, 2)) # 2 to 40
-data_rates = ["0.1Mbps"]
+data_rates = ["1Mbps"]
 sim_sec = 10
 ns3_path = os.path.abspath("../ns3")
-output_csv = "EDCA_Sweep_Sta_0.1Mbps.csv"
+output_csv = "EDCA_Sweep_Sta_1Mbps.csv"
 
 def parse_val(pattern, text, default=0.0):
     m = re.search(pattern, text)

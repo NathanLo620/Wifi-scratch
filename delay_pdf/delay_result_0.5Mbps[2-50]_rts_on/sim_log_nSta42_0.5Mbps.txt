@@ -1,0 +1,88 @@
+======================================================================
+  Simulation Log — nSta=42  dataRate=0.5Mbps
+  Runs per scenario: 5
+  Generated: 2026-02-26 01:03:53
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+  P-EDCA  (nSta=42)
+  Successful runs: 5/5
+  Total elapsed: 740.7s
+  Averaged CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_0.5Mbps[2-50]_rts_on/pedca_vo_delay_pdf_nSta42_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- Averaged Statistics ---
+=== WifiTxStatsHelper (MAC-layer) [Averaged over 5 runs] ===
+Total Successes:       15627.0
+Total Failures:        6282.4
+Total Retransmissions: 0.0
+
+--- Per-AC Success Statistics ---
+AC_BE:
+  Successes:         22.4
+  Throughput:        0.0199111 Mbps
+  Packet Loss:       32.9766 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   -1512446.400 us (Enqueue->TxStart)
+  Avg Access Delay:  1540822.000 us (TxStart->Ack)
+  Avg MAC Delay:     28375.938 us (Total: Enqueue->Ack)
+
+AC_VO:
+  Successes:         15604.6
+  Throughput:        13.8708 Mbps
+  Packet Loss:       28.6526 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   4341.036 us (Enqueue->TxStart)
+  Avg Access Delay:  212.000 us (TxStart->Ack)
+  Avg MAC Delay:     4553.036 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+AC_BE Failures: 10.8
+AC_VO Failures: 6271.6
+
+--- Failure Reasons by AC ---
+  AC_BE EXPIRED_LIFETIME: 10.8
+  AC_VO RETRY_LIMIT: 6271.6
+
+
+──────────────────────────────────────────────────────────────────────
+  EDCA  (nSta=42)
+  Successful runs: 5/5
+  Total elapsed: 660.5s
+  Averaged CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_0.5Mbps[2-50]_rts_on/edca_vo_delay_pdf_nSta42_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- Averaged Statistics ---
+=== WifiTxStatsHelper (MAC-layer) [Averaged over 5 runs] ===
+Total Successes:       16578.0
+Total Failures:        4820.4
+Total Retransmissions: 0.0
+
+--- Per-AC Success Statistics ---
+AC_BE:
+  Successes:         32.4
+  Throughput:        0.0288 Mbps
+  Packet Loss:       32.2810 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   -1604320.000 us (Enqueue->TxStart)
+  Avg Access Delay:  1646708.000 us (TxStart->Ack)
+  Avg MAC Delay:     42388.080 us (Total: Enqueue->Ack)
+
+AC_VO:
+  Successes:         16545.6
+  Throughput:        14.7072 Mbps
+  Packet Loss:       22.4832 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   3632.034 us (Enqueue->TxStart)
+  Avg Access Delay:  212.000 us (TxStart->Ack)
+  Avg MAC Delay:     3844.034 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+AC_BE Failures: 15.0
+AC_VO Failures: 4805.4
+
+--- Failure Reasons by AC ---
+  AC_BE EXPIRED_LIFETIME: 15.0
+  AC_VO RETRY_LIMIT: 4805.4
+
+

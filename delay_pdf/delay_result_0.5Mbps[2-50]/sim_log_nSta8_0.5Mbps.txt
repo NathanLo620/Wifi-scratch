@@ -1,0 +1,166 @@
+======================================================================
+  Simulation Log — nSta=8  dataRate=0.5Mbps
+  Generated: 2026-02-24 14:30:40
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+  P-EDCA  (nSta=8)
+  Command: ./ns3 run scratch/pedca_verification_nsta.cc --nSta=8 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta8_0.5Mbps.csv
+  Elapsed: 3.9s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta8_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       4501
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         4501
+  Throughput:        4.00089 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   16.4737 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     228.474 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.0585648,0.292824,1318
+215,220,217.5,0.0945123,0.472562,2127
+220,225,222.5,0.0219062,0.109531,493
+295,300,297.5,0.00182182,0.00910909,41
+300,305,302.5,0.00311042,0.0155521,70
+305,310,307.5,0.00386581,0.019329,87
+310,315,312.5,0.00355477,0.0177738,80
+315,320,317.5,0.00297712,0.0148856,67
+320,325,322.5,0.00333259,0.016663,75
+325,330,327.5,0.00395468,0.0197734,89
+330,335,332.5,0.00239947,0.0119973,54
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta8_0.5Mbps.csv
+
+
+
+--- STDERR ---
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 122454us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 122454us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:04 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:04 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:04 NAV set to 122454us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=122357us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=122357us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:03 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:05 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:08 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:06 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:02 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=122758us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=122758us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 122855us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:04 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:04 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:04 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:05 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:08 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:02 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 123606us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=123509us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=123509us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:06 NAV set to 123606us (duration=97us)
+
+──────────────────────────────────────────────────────────────────────
+  EDCA  (nSta=8)
+  Command: ./ns3 run scratch/wifi_backoff80211n.cc --nSta=8 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta8_0.5Mbps.csv
+  Elapsed: 6.2s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta8_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       4501
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         4501
+  Throughput:        4.00089 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   16.3059 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     228.306 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.0570096,0.285048,1283
+215,220,217.5,0.100022,0.500111,2251
+220,225,222.5,0.0179516,0.0897578,404
+295,300,297.5,0.00248834,0.0124417,56
+300,305,302.5,0.00262164,0.0131082,59
+305,310,307.5,0.00395468,0.0197734,89
+310,315,312.5,0.00333259,0.016663,75
+315,320,317.5,0.00279938,0.0139969,63
+320,325,322.5,0.00448789,0.0224395,101
+325,330,327.5,0.00382137,0.0191069,86
+330,335,332.5,0.00151078,0.00755388,34
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta8_0.5Mbps.csv
+
+
+

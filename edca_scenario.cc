@@ -1,313 +1,284 @@
+/*
+ * P-EDCA Scenario: Traffic Mix Test (EDCA Baseline)
+ *
+ * Objective:
+ * Test EDCA performance under a specific traffic mix:
+ * - 1/3 BE
+ * - 1/3 BK
+ * - 1/6 VI
+ * - 1/6 VO
+ *
+ * Compare VO Delay against P-EDCA.
+ */
+
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/wifi-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/applications-module.h"
+#include "ns3/wifi-tx-stats-helper.h"
 
-#include <array>
 #include <iostream>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <vector>
+#include <map>
+#include <iomanip>
 
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("EdcaScenario");
 
-namespace {
-constexpr uint8_t kAcBe = 0;
-constexpr uint8_t kAcBk = 1;
-constexpr uint8_t kAcVi = 2;
-constexpr uint8_t kAcVo = 3;
-
-struct DelayStats
-{
-  uint64_t count{0};
-  double   sumUs{0.0};
-};
-
-std::unordered_map<uint64_t, Time>    g_enqueueTime;
-std::unordered_map<uint64_t, uint8_t> g_acByUid;
-std::unordered_set<uint64_t>          g_seenFirstTx;
-std::array<DelayStats, 4>             g_queueDelay;
-
-uint8_t
-TosForAc(uint8_t ac)
+// Helper to get AC name
+static const char* AcName(uint8_t ac)
 {
   switch (ac)
   {
-  case kAcBk: return 0x20;
-  case kAcVi: return 0xa0;
-  case kAcVo: return 0xc0;
-  case kAcBe:
-  default: return 0x00;
+    case 0: return "BE";
+    case 1: return "BK";
+    case 2: return "VI";
+    case 3: return "VO";
+    default: return "?";
   }
 }
 
-const char *
-AcName(uint8_t ac)
+// TID to AC mapping (802.11 standard)
+static uint8_t TidToAc(uint8_t tid)
 {
-  switch (ac)
-  {
-  case kAcBe: return "BE";
-  case kAcBk: return "BK";
-  case kAcVi: return "VI";
-  case kAcVo: return "VO";
-  default: return "?";
+  switch(tid) {
+    case 1: case 2: return 1; // BK
+    case 0: case 3: return 0; // BE
+    case 4: case 5: return 2; // VI
+    case 6: case 7: return 3; // VO
+    default: return 0;
   }
 }
 
-std::array<double, 4>
-ParseFractions(const std::string &text)
+int main(int argc, char* argv[])
 {
-  std::array<double, 4> fractions{0.3333, 0.3333, 0.1667, 0.1667};
-  if (text.empty())
-  {
-    return fractions;
-  }
-
-  std::array<double, 4> parsed{};
-  std::stringstream     ss(text);
-  std::string           item;
-  size_t                idx = 0;
-  while (std::getline(ss, item, ',') && idx < parsed.size())
-  {
-    std::stringstream is(item);
-    double            value = 0.0;
-    is >> value;
-    parsed[idx++] = value;
-  }
-  if (idx != parsed.size())
-  {
-    std::cerr << "[WARN] Invalid fraction count. Use default fractions.\n";
-    return fractions;
-  }
-
-  double sum = 0.0;
-  for (double v : parsed)
-  {
-    sum += v;
-  }
-  if (sum <= 0.0)
-  {
-    std::cerr << "[WARN] Invalid fraction sum. Use default fractions.\n";
-    return fractions;
-  }
-
-  for (double &v : parsed)
-  {
-    v /= sum;
-  }
-  return parsed;
-}
-
-void
-EnqueueCb(std::string ctx, Ptr<const WifiMpdu> mpdu, uint8_t ac)
-{
-  if (!mpdu)
-  {
-    return;
-  }
-  Ptr<const Packet> p = mpdu->GetPacket();
-  if (!p)
-  {
-    return;
-  }
-
-  uint64_t uid = p->GetUid();
-  g_enqueueTime[uid] = Simulator::Now();
-  g_acByUid[uid]     = ac;
-  g_seenFirstTx.erase(uid);
-}
-
-void
-PhyTxBeginCb(std::string ctx, Ptr<const Packet> p, double /*txPowerW*/)
-{
-  WifiMacHeader hdr;
-  Ptr<Packet>   copy = p->Copy();
-  if (!copy->PeekHeader(hdr))
-  {
-    return;
-  }
-  if (!hdr.IsData())
-  {
-    return;
-  }
-  if (hdr.GetAddr1().IsBroadcast())
-  {
-    return;
-  }
-
-  uint64_t uid = p->GetUid();
-  auto     itAc = g_acByUid.find(uid);
-  if (itAc == g_acByUid.end())
-  {
-    return;
-  }
-  if (!g_seenFirstTx.insert(uid).second)
-  {
-    return;
-  }
-
-  auto itEnq = g_enqueueTime.find(uid);
-  if (itEnq == g_enqueueTime.end())
-  {
-    return;
-  }
-
-  double delayUs = (Simulator::Now() - itEnq->second).GetMicroSeconds();
-  g_queueDelay[itAc->second].sumUs += delayUs;
-  g_queueDelay[itAc->second].count++;
-}
-} // namespace
-
-int
-main(int argc, char *argv[])
-{
-  uint32_t    nSta        = 10;
-  double      simTime     = 10.0;
-  uint32_t    pktSize     = 1200;
-  std::string totalRate   = "60Mbps";
-  std::string fractionStr = "0.3333,0.3333,0.1667,0.1667";
+  uint32_t nSta = 20; // Default to 20 for reasonable contention
+  double simTime = 10.0;
+  std::string totalDataRate = "2Mbps"; // Total rate per STA
+  uint32_t payloadSize = 1000;
+  bool enableRts = false;
+  bool verbose = false;
+  double warmupTime = 1.0;
+  bool enablePedca = false; // DISABLED for comparisons
+  double voRatio = 0.1; // Default 10%
+  bool singleVoNode = false;
 
   CommandLine cmd(__FILE__);
-  cmd.AddValue("nSta", "Number of STAs", nSta);
-  cmd.AddValue("sim", "Simulation time (s)", simTime);
-  cmd.AddValue("pkt", "Packet size (bytes)", pktSize);
-  cmd.AddValue("rate", "Total offered rate per STA", totalRate);
-  cmd.AddValue("fractions", "Traffic fractions BE,BK,VI,VO", fractionStr);
+  cmd.AddValue("nSta", "Number of stations", nSta);
+  cmd.AddValue("simTime", "Simulation time (seconds)", simTime);
+  cmd.AddValue("totalDataRate", "Total Data rate per STA (e.g., 2Mbps)", totalDataRate);
+  cmd.AddValue("voRatio", "Ratio of VO traffic (0.0-1.0), remaining split equally", voRatio);
+  cmd.AddValue("singleVoNode", "If true, only STA 0 sends VO traffic", singleVoNode);
+  cmd.AddValue("verbose", "Enable logging", verbose);
   cmd.Parse(argc, argv);
+  
+  if (verbose) {
+    LogComponentEnable("EdcaScenario", LOG_LEVEL_INFO);
+  }
+  
+  NodeContainer wifiStaNodes;
+  wifiStaNodes.Create(nSta);
+  NodeContainer wifiApNode;
+  wifiApNode.Create(1);
 
-  auto fractions = ParseFractions(fractionStr);
-
-  NodeContainer ap;
-  NodeContainer sta;
-  ap.Create(1);
-  sta.Create(nSta);
-
-  YansWifiChannelHelper chan = YansWifiChannelHelper::Default();
-  YansWifiPhyHelper     phy;
-  phy.SetChannel(chan.Create());
+  YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+  YansWifiPhyHelper phy;
+  phy.SetChannel(channel.Create());
+  phy.Set("ChannelSettings", StringValue("{36, 20, BAND_5GHZ, 0}")); // 5GHz
 
   WifiHelper wifi;
-  wifi.SetStandard(WIFI_STANDARD_80211a);
+  wifi.SetStandard(WIFI_STANDARD_80211n);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("OfdmRate24Mbps"),
-                               "ControlMode", StringValue("OfdmRate24Mbps"));
+                               "DataMode", StringValue("HtMcs7"),
+                               "ControlMode", StringValue("HtMcs0"));
+  
+  // RTS/CTS
+  if (!enableRts)
+    Config::SetDefault("ns3::WifiRemoteStationManager::RtsCtsThreshold", StringValue("999999"));
+  else
+    Config::SetDefault("ns3::WifiRemoteStationManager::RtsCtsThreshold", StringValue("0"));
+  
+  // Queue size: 400 packets
+  Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("400p"));
+  
+  Ssid ssid = Ssid("pedca-scenario");
 
+  // AP Setup
   WifiMacHelper mac;
-  Ssid          ssid("edca-scenario");
-
-  mac.SetType("ns3::StaWifiMac",
-              "Ssid", SsidValue(ssid),
-              "QosSupported", BooleanValue(true),
-              "ActiveProbing", BooleanValue(false));
-  NetDeviceContainer staDevs = wifi.Install(phy, mac, sta);
-
   mac.SetType("ns3::ApWifiMac",
               "Ssid", SsidValue(ssid),
               "QosSupported", BooleanValue(true));
-  NetDeviceContainer apDev = wifi.Install(phy, mac, ap);
-
-  MobilityHelper mob;
-  Ptr<ListPositionAllocator> apPos = CreateObject<ListPositionAllocator>();
-  apPos->Add(Vector(0.0, 0.0, 0.0));
-  mob.SetPositionAllocator(apPos);
-  mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mob.Install(ap);
-
-  mob.SetPositionAllocator("ns3::RandomDiscPositionAllocator",
-                           "X", StringValue("0.0"),
-                           "Y", StringValue("0.0"),
-                           "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=3.0]"));
-  mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mob.Install(sta);
-
-  InternetStackHelper stack;
-  stack.Install(ap);
-  stack.Install(sta);
-
-  Ipv4AddressHelper ip;
-  ip.SetBase("10.1.1.0", "255.255.255.0");
-  Ipv4InterfaceContainer apIf = ip.Assign(apDev);
-  ip.Assign(staDevs);
-
-  Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
-
-  const std::array<std::string, 4> queueNames = {
-      "BE_Txop",
-      "BK_Txop",
-      "VI_Txop",
-      "VO_Txop",
-  };
-
-  for (size_t ac = 0; ac < queueNames.size(); ++ac)
-  {
-    std::string path =
-        "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Mac/" + queueNames[ac] + "/Queue/Enqueue";
-    Config::Connect(path, MakeBoundCallback(&EnqueueCb, static_cast<uint8_t>(ac)));
-  }
-
-  Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyTxBegin",
-                  MakeCallback(&PhyTxBeginCb));
-
-  uint16_t port = 5000;
-  PacketSinkHelper sink("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), port));
-  ApplicationContainer sinkApps = sink.Install(ap.Get(0));
-  sinkApps.Start(Seconds(0.0));
-  sinkApps.Stop(Seconds(simTime + 1.0));
-
-  OnOffHelper onoff("ns3::UdpSocketFactory", InetSocketAddress(apIf.GetAddress(0), port));
-  onoff.SetAttribute("PacketSize", UintegerValue(pktSize));
-  onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
-  onoff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
-
-  DataRate total(totalRate);
-  uint64_t totalBps = total.GetBitRate();
-
-  Ptr<UniformRandomVariable> startVar = CreateObject<UniformRandomVariable>();
+  NetDeviceContainer apDevices = wifi.Install(phy, mac, wifiApNode);
+  
+  // STA Setup - P-EDCA enabled/disabled
+  NetDeviceContainer staDevices;
   for (uint32_t i = 0; i < nSta; ++i)
   {
-    for (uint8_t ac = 0; ac < 4; ++ac)
-    {
-      if (fractions[ac] <= 0.0)
-      {
-        continue;
-      }
-      uint64_t acRate = static_cast<uint64_t>(totalBps * fractions[ac]);
-      if (acRate == 0)
-      {
-        continue;
-      }
+      mac.SetType("ns3::StaWifiMac",
+                  "Ssid", SsidValue(ssid),
+                  "QosSupported", BooleanValue(true),
+                  "PedcaSupported", BooleanValue(enablePedca),
+                  "ActiveProbing", BooleanValue(false));
+                  
+      staDevices.Add(wifi.Install(phy, mac, wifiStaNodes.Get(i)));
+  }
 
-      onoff.SetAttribute("DataRate", DataRateValue(DataRate(acRate)));
-      onoff.SetAttribute("Tos", UintegerValue(TosForAc(ac)));
+  // ---------------------- WifiTxStatsHelper ----------------------
+  WifiTxStatsHelper wifiTxStats;
+  wifiTxStats.Enable(apDevices);
+  wifiTxStats.Enable(staDevices);
+  wifiTxStats.Start(Seconds(warmupTime));
+  wifiTxStats.Stop(Seconds(simTime));
 
-      ApplicationContainer app = onoff.Install(sta.Get(i));
-      app.Start(Seconds(startVar->GetValue(0.0, 0.1)));
-      app.Stop(Seconds(simTime));
+  // Mobility
+  MobilityHelper mobility;
+  mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+  
+  Ptr<ListPositionAllocator> apPos = CreateObject<ListPositionAllocator>();
+  apPos->Add(Vector(0.0, 0.0, 0.0));
+  mobility.SetPositionAllocator(apPos);
+  mobility.Install(wifiApNode);
+  
+  // Place STAs randomly in a disc of radius 1~5m
+  mobility.SetPositionAllocator("ns3::RandomDiscPositionAllocator",
+                                "X", StringValue("0.0"),
+                                "Y", StringValue("0.0"),
+                                "Rho", StringValue("ns3::UniformRandomVariable[Min=1.0|Max=5.0]"));
+  mobility.Install(wifiStaNodes);
+
+  // Internet
+  InternetStackHelper stack;
+  stack.Install(wifiApNode);
+  stack.Install(wifiStaNodes);
+
+  Ipv4AddressHelper address;
+  address.SetBase("192.168.1.0", "255.255.255.0");
+  Ipv4InterfaceContainer apIf = address.Assign(apDevices);
+  Ipv4InterfaceContainer staIf = address.Assign(staDevices);
+
+  // Traffic: UDP Server on AP (one port per AC)
+  uint16_t basePort = 9000;
+  for (uint8_t ac = 0; ac < 4; ++ac) {
+    UdpServerHelper server(basePort + ac);
+    ApplicationContainer serverApp = server.Install(wifiApNode.Get(0));
+    serverApp.Start(Seconds(0.5));
+    serverApp.Stop(Seconds(simTime));
+  }
+  
+  // Clients on STAs: Each STA sends traffic according to the mix
+  // Mix: 1/3 BE, 1/3 BK, 1/6 VI, 1/6 VO
+  DataRate rate(totalDataRate);
+  uint64_t totalBitRate = rate.GetBitRate();
+
+  // Calculate rate per AC
+  uint64_t rateVO = totalBitRate * voRatio;
+  uint64_t remaining = totalBitRate - rateVO;
+  
+  uint64_t rateBE = remaining / 3;
+  uint64_t rateBK = remaining / 3;
+  uint64_t rateVI = remaining - rateBE - rateBK; // Ensure sum matches exactly
+
+  struct FlowCfg { uint8_t ac; uint8_t tos; uint64_t bitrate; };
+  FlowCfg flows[4] = {
+      {0, 0x00, rateBE}, // BE
+      {1, 0x20, rateBK}, // BK
+      {2, 0xA0, rateVI}, // VI
+      {3, 0xC0, rateVO}  // VO
+  };
+  
+  Ptr<UniformRandomVariable> startRv = CreateObject<UniformRandomVariable>();
+
+  for (uint32_t i = 0; i < nSta; ++i)
+  {
+      for (const auto& flow : flows) {
+        if (flow.bitrate == 0) continue;
+        
+        // If singleVoNode is true, only Node 0 sends VO (ac=3)
+        if (singleVoNode && flow.ac == 3 && i != 0) continue;
+
+        double packetsPerSecond = (double)flow.bitrate / (8.0 * payloadSize);
+        Time interval = Seconds(1.0 / packetsPerSecond);
+
+        UdpClientHelper client(apIf.GetAddress(0), basePort + flow.ac);
+        client.SetAttribute("MaxPackets", UintegerValue(1000000));
+        client.SetAttribute("Interval", TimeValue(interval));
+        client.SetAttribute("PacketSize", UintegerValue(payloadSize));
+        client.SetAttribute("Tos", UintegerValue(flow.tos));
+        
+        ApplicationContainer clientApp = client.Install(wifiStaNodes.Get(i));
+        double start = 0.5 + startRv->GetValue(0.0, 0.5);
+        clientApp.Start(Seconds(start));
+        clientApp.Stop(Seconds(simTime));
+      }
+  }
+
+  Simulator::Stop(Seconds(simTime + 1.0));
+  Simulator::Run();
+  
+  // ---------------------- WifiTxStatsHelper Output ----------------------
+  double duration = simTime - warmupTime;
+  if (duration <= 0) duration = 1.0;
+
+  std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
+  std::cout << "Scenario: " << (enablePedca ? "P-EDCA" : "EDCA") << "\n";
+  std::cout << "Traffic Mix: VO=" << voRatio*100 << "%, Others=" << (1.0-voRatio)/3.0*100 << "% each (BE,BK,VI)\n";
+  if (singleVoNode) std::cout << "  (Single VO Node: STA 0 only)\n";
+  std::cout << "Total Rate per STA: " << totalDataRate << "\n";
+  std::cout << "Stations: " << nSta << "\n\n";
+
+  // 1. Calculate Failure Statistics
+  auto failureRecs = wifiTxStats.GetFailureRecords();
+  std::vector<uint64_t> helperFail(4, 0);
+  
+  for (const auto& [key, records] : failureRecs) {
+    for (const auto& rec : records) {
+      uint8_t ac = (rec.m_tid < 8) ? TidToAc(rec.m_tid) : 0;
+      helperFail[ac]++;
     }
   }
 
-  Simulator::Stop(Seconds(simTime));
-  Simulator::Run();
+  // 2. Calculate Success Statistics
+  auto successRecs = wifiTxStats.GetSuccessRecords();
+  std::vector<uint64_t> helperSucc(4, 0), helperRetxs(4, 0), helperCount(4, 0);
+  std::vector<double> helperMacDelay(4, 0.0);
 
-  std::cout << "\n=== EDCA Scenario Results ===\n";
-  std::cout << "STAs: " << nSta << " , SimTime: " << simTime << " s\n";
-  std::cout << "Traffic fractions (BE,BK,VI,VO): " << fractions[0] << ", " << fractions[1]
-            << ", " << fractions[2] << ", " << fractions[3] << "\n";
-  std::cout << "Total rate per STA: " << totalRate << "\n";
-
-  for (uint8_t ac = 0; ac < 4; ++ac)
-  {
-    double avgDelayUs = g_queueDelay[ac].count
-                            ? (g_queueDelay[ac].sumUs / g_queueDelay[ac].count)
-                            : 0.0;
-    std::cout << "Avg MAC Queue Delay " << AcName(ac) << ": " << avgDelayUs << " us\n";
+  for (const auto& [key, records] : successRecs) {
+    for (const auto& rec : records) {
+      uint8_t ac = (rec.m_tid < 8) ? TidToAc(rec.m_tid) : 0;
+      helperSucc[ac]++;
+      helperRetxs[ac] += rec.m_retransmissions;
+      double queueUs = (rec.m_txStartTime - rec.m_enqueueTime).GetMicroSeconds();
+      double accessUs = (rec.m_ackTime - rec.m_txStartTime).GetMicroSeconds();
+      helperMacDelay[ac] += queueUs + accessUs;
+      helperCount[ac]++;
+    }
   }
 
+  std::cout << std::fixed << std::setprecision(2);
+  std::cout << "--- Per-AC Statistics ---\n";
+  
+  for (int ac = 0; ac < 4; ++ac) {
+    double avgMac = (helperCount[ac]>0) ? (helperMacDelay[ac] / helperCount[ac]) : 0.0;
+    double avgRetx = (helperCount[ac]>0) ? ((double)helperRetxs[ac] / helperCount[ac]) : 0.0;
+    double hThr = (helperSucc[ac] * payloadSize * 8.0) / duration / 1e6;
+    double hLoss = 0.0;
+    if ((helperSucc[ac] + helperFail[ac]) > 0) {
+      hLoss = (double)helperFail[ac] / (double)(helperSucc[ac] + helperFail[ac]) * 100.0;
+    }
+    
+    // Only print if there is ANY activity
+    if (helperSucc[ac] == 0 && helperFail[ac] == 0) continue;
+
+    std::cout << "AC_" << AcName(ac) << ":\n";
+    std::cout << "  Throughput:        " << hThr << " Mbps\n";
+    std::cout << "  Packet Loss:       " << hLoss << " %\n";
+    std::cout << "  Avg Retx/MPDU:     " << avgRetx << "\n";
+    std::cout << "  Avg MAC Delay:     " << avgMac << " us\n\n";
+  }
+  
   Simulator::Destroy();
   return 0;
 }
