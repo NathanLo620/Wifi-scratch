@@ -1,7 +1,8 @@
 # Technical Specification: Prioritized EDCA (P-EDCA) Operational Mechanism  
 **Based on IEEE P82.11bn™/D1.1 (Sep 2025) — Clause 37.6 “Prioritized EDCA” and related definitions**  
+**Updated with Comment Resolution items #4555, #7657, #12651**  
 **Document Type:** Implementable mechanism spec (standard-setter / simulator-developer grade)  
-**Version:** 1.0 (Jan 2026)
+**Version:** 1.1 (Mar 2026)
 
 ---
 
@@ -39,6 +40,7 @@ P-EDCA is an enhancement to EDCA that **reduces channel access delay for AC_VO t
   - Incremented by 1 **with every DS-CTS transmission**.
   - Set to 0 when `QSRC[AC_VO]` is set to 0.
 - **QSRC[AC_VO]:** EDCAF retry-stage counter as defined in EDCA backoff procedure; used as a gate to allow entry to P-EDCA.
+- **dot11ShortRetryLimit:** The maximum number of transmission attempts before a failure condition is indicated (see Section 3.1 for P-EDCA constraint).
 
 ### 1.5 Management / MAC Variables
 - **dot11PEDCARetryThreshold:** Threshold to compare against `QSRC[AC_VO]` for allowing P-EDCA start.
@@ -99,6 +101,8 @@ The NAV set by the DS-CTS Duration protects the medium for the **maximum P-EDCA 
 
 ## 3. Conditions to Start a P-EDCA Contention
 
+*(Updated per Comment Resolution #4555, #7657, #12651)*
+
 A P-EDCA STA **may** start a P-EDCA contention if **all** of the following are satisfied:
 
 1) **BSS + Link enablement:**
@@ -107,8 +111,24 @@ A P-EDCA STA **may** start a P-EDCA contention if **all** of the following are s
 2) **Traffic condition:**
    - The P-EDCA STA has pending **AC_VO** buffered traffic.
 3) **Gate by counters:**
-   - `QSRC[AC_VO] ≥ dot11PEDCARetryThreshold`, and
-   - `PSRC[AC_VO] < dot11PEDCAConsecutiveAttempt`
+   - `QSRC[AC_VO]` is **equal to or greater than** `dot11PEDCARetryThreshold`, and
+   - `PSRC[AC_VO]` is **less than** `dot11PEDCAConsecutiveAttempt`
+
+### 3.1 ShortRetryLimit Constraint (Normative)
+
+> **NOTE (Comment Resolution #4555, #7657, #12651):** The additional condition required by a P-EDCA STA to start a P-EDCA contention is that `dot11ShortRetryLimit` is configured to be **higher than** `dot11PEDCARetryThreshold`.
+
+**Rationale:** If `dot11ShortRetryLimit ≤ dot11PEDCARetryThreshold`, the EDCA retry procedure would indicate a failure condition (drop the MPDU) before QSRC can ever reach the P-EDCA threshold, making P-EDCA unreachable. Therefore, the standard requires:
+
+```
+dot11ShortRetryLimit > dot11PEDCARetryThreshold
+```
+
+For the default values:
+- `dot11PEDCARetryThreshold = 2`
+- `dot11ShortRetryLimit` must be configured to at least **3** (default is 7)
+
+**Implementation note:** This constraint shall be validated at P-EDCA enablement time. If violated, P-EDCA shall not be activated, or the ShortRetryLimit shall be automatically raised to `dot11PEDCARetryThreshold + 1`.
 
 ---
 

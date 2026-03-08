@@ -67,6 +67,7 @@ int main(int argc, char* argv[])
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
+  double pedcaRatio = 1.0; // Fraction of STAs with P-EDCA enabled (0.0-1.0)
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of stations", nSta);
@@ -75,6 +76,7 @@ int main(int argc, char* argv[])
   cmd.AddValue("verbose", "Enable logging", verbose);
   cmd.AddValue("voicePdfBinUs", "VO delay PDF bin width (microseconds)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput", "Output CSV file for VO delay PDF", voicePdfOutput);
+  cmd.AddValue("pedcaRatio", "Fraction of STAs with P-EDCA enabled (0.0-1.0)", pedcaRatio);
   cmd.Parse(argc, argv);
   
   if (verbose) {
@@ -106,7 +108,7 @@ int main(int argc, char* argv[])
   // Queue size: 400 packets
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("400p"));
   
-  Ssid ssid = Ssid("pedca-nsta");
+  Ssid ssid = Ssid("wifi-backoff-vo");
 
   // AP Setup
   WifiMacHelper mac;
@@ -115,14 +117,16 @@ int main(int argc, char* argv[])
               "QosSupported", BooleanValue(true));
   NetDeviceContainer apDevices = wifi.Install(phy, mac, wifiApNode);
   
-  // STA Setup - All with P-EDCA enabled
+  // STA Setup - P-EDCA enabled for first nPedcaSta STAs
+  uint32_t nPedcaSta = static_cast<uint32_t>(nSta * pedcaRatio);
   NetDeviceContainer staDevices;
   for (uint32_t i = 0; i < nSta; ++i)
   {
+      bool pedcaEnabled = (i < nPedcaSta);
       mac.SetType("ns3::StaWifiMac",
                   "Ssid", SsidValue(ssid),
                   "QosSupported", BooleanValue(true),
-                  "PedcaSupported", BooleanValue(true),
+                  "PedcaSupported", BooleanValue(pedcaEnabled),
                   "ActiveProbing", BooleanValue(false));
                   
       staDevices.Add(wifi.Install(phy, mac, wifiStaNodes.Get(i)));
@@ -157,12 +161,12 @@ int main(int argc, char* argv[])
   stack.Install(wifiStaNodes);
 
   Ipv4AddressHelper address;
-  address.SetBase("192.168.1.0", "255.255.255.0");
+  address.SetBase("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer apIf = address.Assign(apDevices);
   Ipv4InterfaceContainer staIf = address.Assign(staDevices);
 
   // Traffic: UDP Server on AP (VO only)
-  uint16_t basePort = 9000;
+  uint16_t basePort = 5000;
   constexpr uint8_t voAc = 3;
   constexpr uint8_t voTos = 0xC0;
   UdpServerHelper server(basePort + voAc);
@@ -199,6 +203,8 @@ int main(int argc, char* argv[])
   if (duration <= 0) duration = 1.0;
 
   std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
+  std::cout << "P-EDCA Ratio: " << pedcaRatio << "\n";
+  std::cout << "P-EDCA STAs: " << nPedcaSta << "/" << nSta << "\n";
   std::cout << "Total Successes:       " << wifiTxStats.GetSuccesses() << "\n";
   std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
   std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";

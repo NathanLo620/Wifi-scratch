@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
 {
   uint32_t nSta = 20; // Default to 20 for reasonable contention
   double simTime = 10.0;
-  std::string totalDataRate = "2Mbps"; // Total rate per STA
+  std::string totalDataRate = "0.5Mbps"; // Total rate per STA
   uint32_t payloadSize = 1000;
   bool enableRts = false;
   bool verbose = false;

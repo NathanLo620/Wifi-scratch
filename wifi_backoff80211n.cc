@@ -64,6 +64,7 @@ int main(int argc, char* argv[])
   uint32_t queueMaxP = 400;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/wifi_backoff_vo_delay_pdf.csv";
+  double pedcaRatio = 0.0; // Fraction of STAs with P-EDCA enabled (0.0-1.0)
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of stations", nSta);
@@ -76,6 +77,7 @@ int main(int argc, char* argv[])
   cmd.AddValue("warmupTime", "Warmup time (seconds)", warmupTime);
   cmd.AddValue("voicePdfBinUs", "VO delay PDF bin width (microseconds)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput", "Output CSV file for VO delay PDF", voicePdfOutput);
+  cmd.AddValue("pedcaRatio", "Fraction of STAs with P-EDCA enabled (0.0-1.0)", pedcaRatio);
   cmd.Parse(argc, argv);
 
   if (verbose)
@@ -122,13 +124,15 @@ int main(int argc, char* argv[])
               "QosSupported", BooleanValue(true));
   NetDeviceContainer apDevices = wifi.Install(phy, mac, wifiApNode);
 
+  uint32_t nPedcaSta = static_cast<uint32_t>(nSta * pedcaRatio);
   NetDeviceContainer staDevices;
   for (uint32_t i = 0; i < nSta; ++i)
   {
+    bool pedcaEnabled = (i < nPedcaSta);
     mac.SetType("ns3::StaWifiMac",
                 "Ssid", SsidValue(ssid),
                 "QosSupported", BooleanValue(true),
-                "PedcaSupported", BooleanValue(false),
+                "PedcaSupported", BooleanValue(pedcaEnabled),
                 "ActiveProbing", BooleanValue(false));
     staDevices.Add(wifi.Install(phy, mac, wifiStaNodes.Get(i)));
   }
@@ -200,6 +204,8 @@ int main(int argc, char* argv[])
   }
 
   std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
+  std::cout << "P-EDCA Ratio: " << pedcaRatio << "\n";
+  std::cout << "P-EDCA STAs: " << nPedcaSta << "/" << nSta << "\n";
   std::cout << "Total Successes:       " << wifiTxStats.GetSuccesses() << "\n";
   std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
   std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";
