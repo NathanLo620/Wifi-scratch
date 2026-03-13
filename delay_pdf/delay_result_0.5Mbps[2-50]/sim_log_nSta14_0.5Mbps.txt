@@ -1,0 +1,253 @@
+======================================================================
+  Simulation Log — nSta=14  dataRate=0.5Mbps
+  Generated: 2026-02-24 14:30:59
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+  P-EDCA  (nSta=14)
+  Command: ./ns3 run scratch/pedca_verification_nsta.cc --nSta=14 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta14_0.5Mbps.csv
+  Elapsed: 16.5s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta14_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       7873
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         7873
+  Throughput:        6.99822 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   5.36657 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     217.367 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.05764,0.2882,2269
+215,220,217.5,0.0986155,0.493078,3882
+220,225,222.5,0.0325924,0.162962,1283
+225,230,227.5,0.00934841,0.046742,368
+230,235,232.5,0.00134637,0.00673187,53
+330,335,332.5,0.00015242,0.000762098,6
+340,345,342.5,0.00015242,0.000762098,6
+350,355,352.5,2.54033e-05,0.000127016,1
+360,365,362.5,0.000127016,0.000635082,5
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta14_0.5Mbps.csv
+
+
+
+--- STDERR ---
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=123011us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=123011us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 123108us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:05 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:02 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0a PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0a received DS-CTS, Duration=97us at t=123197us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:04 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:04 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:04 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0c PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0c received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0c NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0e PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0e received DS-CTS, Duration=97us at t=123197us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0d PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0d received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0d NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:08 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0f PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0f received DS-CTS, Duration=97us at t=123197us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=123197us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0b PHY delivered DS-CTS at t=123197us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0b received DS-CTS, Duration=97us at t=123197us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0b NAV set to 123294us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0f PHY delivered DS-CTS at t=123652us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0f received DS-CTS, Duration=97us at t=123652us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0f NAV set to 123749us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0b PHY delivered DS-CTS at t=123652us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0b received DS-CTS, Duration=97us at t=123652us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0b NAV set to 123749us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0d PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0d received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0d NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0a PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0a received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0a NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:06 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:05 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0e PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0e received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0e NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:02 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:03 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0f PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0f received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0f NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:08 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0c PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0c received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0c NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0b PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0b received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0b NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=124010us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=124010us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 124107us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:03 NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0e PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0e received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0e NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0b PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0b received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0b NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0a PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0a received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0a NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:04 PHY delivered DS-CTS at t=124447us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:04 received DS-CTS, Duration=97us at t=124447us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:04 NAV set to 124544us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:04 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:04 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:04 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:06 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0a PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0a received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0a NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:05 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0e PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0e received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0e NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:03 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:09 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:09 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:09 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0c PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0c received DS-CTS, Duration=97us at t=124633us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0f PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0f received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0f NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:08 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:08 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0b PHY delivered DS-CTS at t=124633us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0b received DS-CTS, Duration=97us at t=124633us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0b NAV set to 124730us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:0f PHY delivered DS-CTS at t=125070us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:0f received DS-CTS, Duration=97us at t=125070us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:0f NAV set to 125167us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:05 PHY delivered DS-CTS at t=126981us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:05 received DS-CTS, Duration=97us at t=126981us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:06 PHY delivered DS-CTS at t=126981us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:06 received DS-CTS, Duration=97us at t=126981us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:02 PHY delivered DS-CTS at t=126981us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:02 received DS-CTS, Duration=97us at t=126981us
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:07 PHY delivered DS-CTS at t=126981us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:07 received DS-CTS, Duration=97us at t=126981us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:07 NAV set to 127078us (duration=97us)
+
+──────────────────────────────────────────────────────────────────────
+  EDCA  (nSta=14)
+  Command: ./ns3 run scratch/wifi_backoff80211n.cc --nSta=14 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta14_0.5Mbps.csv
+  Elapsed: 12.9s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta14_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       7873
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         7873
+  Throughput:        6.99822 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   5.35425 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     217.354 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.0584529,0.292265,2301
+215,220,217.5,0.099149,0.495745,3903
+220,225,222.5,0.030738,0.15369,1210
+225,230,227.5,0.0107456,0.0537279,423
+230,235,232.5,0.000457259,0.00228629,18
+340,345,342.5,0.000101613,0.000508066,4
+350,355,352.5,0.000127016,0.000635082,5
+360,365,362.5,7.62098e-05,0.000381049,3
+365,370,367.5,0.00015242,0.000762098,6
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta14_0.5Mbps.csv
+
+
+

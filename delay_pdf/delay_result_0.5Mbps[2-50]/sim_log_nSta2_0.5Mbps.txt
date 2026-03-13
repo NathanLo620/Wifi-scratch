@@ -1,0 +1,97 @@
+======================================================================
+  Simulation Log — nSta=2  dataRate=0.5Mbps
+  Generated: 2026-02-24 14:30:31
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+  P-EDCA  (nSta=2)
+  Command: ./ns3 run scratch/pedca_verification_nsta.cc --nSta=2 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta2_0.5Mbps.csv
+  Elapsed: 0.9s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta2_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       1125
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         1125
+  Throughput:        1 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   5.80267 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     217.803 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.048,0.24,270
+215,220,217.5,0.113778,0.568889,640
+220,225,222.5,0.0352,0.176,198
+295,300,297.5,0.00124444,0.00622222,7
+305,310,307.5,0.000177778,0.000888889,1
+315,320,317.5,0.000888889,0.00444444,5
+320,325,322.5,0.000711111,0.00355556,4
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/pedca_vo_delay_pdf_nSta2_0.5Mbps.csv
+
+
+
+--- STDERR ---
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:01 PHY delivered DS-CTS at t=120972us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:01 received DS-CTS, Duration=97us at t=120972us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:01 NAV set to 121069us (duration=97us)
+[DS-CTS RECV-ENTRY] STA=00:00:00:00:00:03 PHY delivered DS-CTS at t=120972us
+[DS-CTS NAV-RX] STA=00:00:00:00:00:03 received DS-CTS, Duration=97us at t=120972us
+[DS-CTS NAV-SET] STA=00:00:00:00:00:03 NAV set to 121069us (duration=97us)
+
+──────────────────────────────────────────────────────────────────────
+  EDCA  (nSta=2)
+  Command: ./ns3 run scratch/wifi_backoff80211n.cc --nSta=2 --simTime=10.0 --dataRate=0.5Mbps --voicePdfBinUs=5 --voicePdfOutput=scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta2_0.5Mbps.csv
+  Elapsed: 0.8s
+  Success: True
+  CSV: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta2_0.5Mbps.csv
+──────────────────────────────────────────────────────────────────────
+
+--- STDOUT ---
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+
+=== WifiTxStatsHelper (MAC-layer) ===
+Total Successes:       1125
+Total Failures:        0
+Total Retransmissions: 0
+
+--- Per-AC Success Statistics ---
+AC_VO:
+  Successes:         1125
+  Throughput:        1 Mbps
+  Packet Loss:       0 %
+  Avg Retx/MPDU:     0
+  Avg Queue Delay:   5.22667 us (Enqueue->TxStart)
+  Avg Access Delay:  212 us (TxStart->Ack)
+  Avg MAC Delay:     217.227 us (Total: Enqueue->Ack)
+
+--- Per-AC Failure Statistics ---
+
+--- VO Delay PDF (MAC Delay) ---
+bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count
+210,215,212.5,0.0721778,0.360889,406
+215,220,217.5,0.1184,0.592,666
+220,225,222.5,0.0064,0.032,36
+305,310,307.5,0.00124444,0.00622222,7
+310,315,312.5,0.000177778,0.000888889,1
+320,325,322.5,0.000888889,0.00444444,5
+330,335,332.5,0.000711111,0.00355556,4
+VO Delay PDF CSV saved: scratch/delay_pdf/delay_result[2-50]/edca_vo_delay_pdf_nSta2_0.5Mbps.csv
+
+
+
