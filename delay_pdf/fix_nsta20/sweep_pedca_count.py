@@ -1,0 +1,1166 @@
+#!/usr/bin/env python3
+"""
+P-EDCA Count Sweep — Fixed 20 STAs, Varying P-EDCA STA Count
+=============================================================
+Sweeps the number of P-EDCA enabled STAs from 0 to 20 (with total 20 STAs),
+running pedca_verification_nsta.cc with --pedcaRatio=nPedca/20 for each.
+
+For each nPedca value:
+  - Runs N_RUNS simulations (different RngRun seeds)
+  - Averages histogram probabilities across runs
+  - Collects averaged statistics
+
+Output:
+  - Delay PDF/CDF plots per nPedca
+  - Packet Loss vs nPedca
+  - Channel Idle vs nPedca
+  - P-EDCA Tx Ratio vs nPedca (pedcaTx / edcaTx per P-EDCA STA)
+  - P-EDCA Success Share vs nPedca (total pedcaTx / total successes)
+  - Per-P-EDCA-STA pedcaTx / (pedcaTx + non-pedcaTx) ratio
+
+Usage:
+  python3 sweep_pedca_count.py                  # Full sweep + plot
+  python3 sweep_pedca_count.py --plot-only      # Re-plot from existing data
+  python3 sweep_pedca_count.py --workers 8      # Parallel workers
+  python3 sweep_pedca_count.py --runs 3         # Override runs per scenario
+"""
+
+import argparse
+import csv
+import math
+import os
+import re
+import subprocess
+import sys
+import time
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+from multiprocessing import cpu_count as mp_cpu_count
+
+# ══════════════════════════════════════════════════════════════════════
+#  USER-CONFIGURABLE PARAMETERS
+# ══════════════════════════════════════════════════════════════════════
+N_STA           = 20                                   # Fixed total STAs
+PEDCA_COUNTS    = list(range(0, 21))                   # 0, 1, 2, ..., 20
+DATA_RATE       = "1Mbps"
+SIM_TIME        = 10.0
+BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
+MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))
+N_RUNS          = 10
+SIM_BINARY      = "scratch/pedca_verification_nsta.cc"
+# ══════════════════════════════════════════════════════════════════════
+
+# Paths
+NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
+OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/fix_nsta20")
+
+# ── Force non-interactive backend ──
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
+
+# ─────────────────────── Filename Helpers ────────────────────────────
+
+def count_tag(n_pedca: int) -> str:
+    """Return a filesystem-safe count tag, e.g. 0 -> 'p00', 5 -> 'p05'."""
+    return f"p{n_pedca:02d}"
+
+def csv_name(n_pedca: int, data_rate: str, run_idx: int = None) -> str:
+    tag = count_tag(n_pedca)
+    if run_idx is not None:
+        return f"{tag}_vo_delay_pdf_nSta{N_STA}_{data_rate}_run{run_idx}.csv"
+    return f"{tag}_vo_delay_pdf_nSta{N_STA}_{data_rate}.csv"
+
+def combined_plot_name(n_pedca: int, data_rate: str) -> str:
+    return f"vo_delay_probability_pedca{n_pedca}_{data_rate}.pdf"
+
+def log_name(data_rate: str) -> str:
+    return f"sim_log_fixNsta{N_STA}_{data_rate}.txt"
+
+
+# ─────────────────────── Single Simulation Task ──────────────────────
+
+def run_single_sim(n_pedca: int, data_rate: str,
+                   sim_time: float, bin_us: int, run_idx: int = 0) -> dict:
+    """
+    Run ONE ns-3 simulation with --pedcaRatio=n_pedca/N_STA.
+    Returns a dict with results. Thread-safe.
+    """
+    ratio = n_pedca / N_STA
+    csv_file = csv_name(n_pedca, data_rate, run_idx)
+    csv_path = OUT_DIR / csv_file
+    relative_csv = str(csv_path.relative_to(NS3_DIR))
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    args = (
+        f"--nSta={N_STA} "
+        f"--simTime={sim_time} "
+        f"--dataRate={data_rate} "
+        f"--pedcaRatio={ratio} "
+        f"--voicePdfBinUs={bin_us} "
+        f"--voicePdfOutput={relative_csv} "
+        f"--RngRun={run_idx + 1}"
+    )
+    cmd = ["./ns3", "run", f"{SIM_BINARY} {args}"]
+
+    t0 = time.time()
+    result_info = {
+        "n_pedca":  n_pedca,
+        "ratio":    ratio,
+        "run_idx":  run_idx,
+        "cmd":      " ".join(cmd),
+        "csv_path": None,
+        "stdout":   "",
+        "stderr":   "",
+        "success":  False,
+        "elapsed":  0.0,
+    }
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True,
+            cwd=str(NS3_DIR)
+        )
+        result_info["stdout"] = extract_stats_block(result.stdout)
+        result_info["stderr"] = ""
+
+        if csv_path.exists() and csv_path.stat().st_size > 10:
+            result_info["csv_path"] = csv_path
+            result_info["success"] = True
+
+    except subprocess.CalledProcessError as e:
+        err_out = e.stdout or ""
+        result_info["stdout"] = err_out[-5000:] if len(err_out) > 5000 else err_out
+        result_info["stderr"] = ""
+
+    result_info["elapsed"] = time.time() - t0
+    return result_info
+
+
+# ─────────────────────── Histogram Averaging ─────────────────────────
+
+def average_histograms(csv_paths: list, out_path: Path, n_runs: int):
+    all_bins = defaultdict(list)
+    for cp in csv_paths:
+        try:
+            with open(cp, "r", newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    key = (float(row["bin_start_us"]), float(row["bin_end_us"]))
+                    all_bins[key].append(float(row["probability"]))
+        except Exception:
+            continue
+
+    if not all_bins:
+        return
+
+    with open(out_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["bin_start_us", "bin_end_us", "bin_mid_us",
+                          "pdf_per_us", "probability", "count"])
+        for (start, end) in sorted(all_bins.keys()):
+            probs = all_bins[(start, end)]
+            while len(probs) < n_runs:
+                probs.append(0.0)
+            avg_prob = sum(probs) / n_runs
+            mid = (start + end) / 2
+            width = end - start
+            pdf = avg_prob / width if width > 0 else 0
+            writer.writerow([start, end, mid, f"{pdf:.8g}", f"{avg_prob:.8g}", 0])
+
+
+# ─────────────────── Statistics Parsing & Averaging ──────────────────
+
+def extract_stats_block(stdout: str) -> str:
+    lines = stdout.splitlines()
+    start_idx = None
+    end_idx = len(lines)
+    for i, line in enumerate(lines):
+        if "WifiTxStatsHelper" in line and start_idx is None:
+            start_idx = i
+        if start_idx is not None and "VO Delay PDF" in line:
+            end_idx = i
+            break
+    if start_idx is None:
+        return "  (no WifiTxStatsHelper output found)\n"
+    block = lines[start_idx:end_idx]
+    while block and not block[-1].strip():
+        block.pop()
+    return "\n".join(block) + "\n"
+
+
+def parse_stats(stdout: str) -> dict:
+    """Parse WifiTxStatsHelper output into a structured dict."""
+    block = extract_stats_block(stdout)
+    result = {
+        "pedca_ratio": 0.0,
+        "channel_idle_ratio": 0.0,
+        "avg_pedca_tx_ratio": 0.0,
+        "avg_pedca_success_rate": 0.0,
+        "total_successes": 0,
+        "total_failures": 0,
+        "total_retransmissions": 0,
+        "per_ac": {},
+        "failure_ac": {},
+        "failure_reasons": {},
+    }
+
+    lines = block.splitlines()
+    section = None
+    current_ac = None
+
+    for line in lines:
+        s = line.strip()
+        if s.startswith("P-EDCA Ratio:"):
+            try: result["pedca_ratio"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Channel Idle Time (AP):"):
+            try: result["channel_idle_ratio"] = float(s.split(":")[1].split("%")[0].strip())
+            except: pass
+        elif s.startswith("Avg P-EDCA Tx Ratio:"):
+            try: result["avg_pedca_tx_ratio"] = float(s.split("Ratio:")[1].strip())
+            except: pass
+        elif s.startswith("Avg P-EDCA Success Rate:"):
+            try: result["avg_pedca_success_rate"] = float(s.split("Rate:")[1].strip())
+            except: pass
+        elif s.startswith("Total Successes:"):
+            try: result["total_successes"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Total Failures:"):
+            try: result["total_failures"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Total Retransmissions:"):
+            try: result["total_retransmissions"] = float(s.split(":")[1].strip())
+            except: pass
+        elif "Per-AC Success" in s:
+            section = "success"
+            current_ac = None
+        elif "Per-AC Failure Statistics" in s:
+            section = "failure"
+            current_ac = None
+        elif "Failure Reasons" in s:
+            section = "reasons"
+        elif section == "success" and s.startswith("AC_") and s.endswith(":"):
+            current_ac = s.rstrip(":")
+            result["per_ac"][current_ac] = {}
+        elif section == "success" and current_ac and ":" in s:
+            key, _, val_part = s.partition(":")
+            key = key.strip()
+            val_token = val_part.strip().split()[0] if val_part.strip() else ""
+            try:
+                result["per_ac"][current_ac][key] = float(val_token)
+            except ValueError:
+                pass
+        elif section == "failure" and "Failures:" in s:
+            parts = s.split()
+            if len(parts) >= 3:
+                ac = parts[0]
+                try:
+                    result["failure_ac"][ac] = float(parts[-1])
+                except: pass
+        elif section == "reasons" and ":" in s:
+            key, _, val = s.rpartition(":")
+            key = key.strip()
+            try:
+                result["failure_reasons"][key] = float(val.strip())
+            except: pass
+
+    return result
+
+
+def average_stats(stats_list: list) -> dict:
+    n = len(stats_list)
+    if n == 0:
+        return None
+
+    avg = {
+        "pedca_ratio": stats_list[0].get("pedca_ratio", 0.0),
+        "channel_idle_ratio": sum(s.get("channel_idle_ratio", 0.0) for s in stats_list) / n,
+        "avg_pedca_tx_ratio": sum(s.get("avg_pedca_tx_ratio", 0.0) for s in stats_list) / n,
+        "avg_pedca_success_rate": sum(s.get("avg_pedca_success_rate", 0.0) for s in stats_list) / n,
+        "total_successes": sum(s["total_successes"] for s in stats_list) / n,
+        "total_failures": sum(s["total_failures"] for s in stats_list) / n,
+        "total_retransmissions": sum(s["total_retransmissions"] for s in stats_list) / n,
+        "per_ac": {},
+        "failure_ac": {},
+        "failure_reasons": {},
+    }
+
+    all_acs = set()
+    for s in stats_list:
+        all_acs.update(s["per_ac"].keys())
+
+    for ac in sorted(all_acs):
+        avg["per_ac"][ac] = {}
+        all_keys = set()
+        for s in stats_list:
+            if ac in s["per_ac"]:
+                all_keys.update(s["per_ac"][ac].keys())
+        for key in sorted(all_keys):
+            vals = [s["per_ac"][ac][key] for s in stats_list
+                    if ac in s["per_ac"] and key in s["per_ac"][ac]]
+            avg["per_ac"][ac][key] = sum(vals) / len(vals) if vals else 0
+
+    all_facs = set()
+    for s in stats_list:
+        all_facs.update(s["failure_ac"].keys())
+    for ac in sorted(all_facs):
+        vals = [s["failure_ac"].get(ac, 0) for s in stats_list]
+        avg["failure_ac"][ac] = sum(vals) / n
+
+    all_reasons = set()
+    for s in stats_list:
+        all_reasons.update(s["failure_reasons"].keys())
+    for reason in sorted(all_reasons):
+        vals = [s["failure_reasons"].get(reason, 0) for s in stats_list]
+        avg["failure_reasons"][reason] = sum(vals) / n
+
+    return avg
+
+
+def format_stats_text(avg: dict, n_runs: int) -> str:
+    lines = []
+    lines.append(f"=== WifiTxStatsHelper (MAC-layer) [Averaged over {n_runs} runs] ===")
+    lines.append(f"P-EDCA Ratio: {avg['pedca_ratio']}")
+    lines.append(f"Channel Idle Time (AP): {avg.get('channel_idle_ratio', 0.0):.2f} %")
+    lines.append(f"Avg P-EDCA Tx Ratio: {avg.get('avg_pedca_tx_ratio', 0.0):.6g}")
+    lines.append(f"Avg P-EDCA Success Rate: {avg.get('avg_pedca_success_rate', 0.0):.6g}")
+    lines.append(f"Total Successes:       {avg['total_successes']:.1f}")
+    lines.append(f"Total Failures:        {avg['total_failures']:.1f}")
+    lines.append(f"Total Retransmissions: {avg['total_retransmissions']:.1f}")
+    lines.append("")
+    lines.append("--- Per-AC Success Statistics ---")
+
+    for ac in sorted(avg["per_ac"].keys()):
+        m = avg["per_ac"][ac]
+        lines.append(f"{ac}:")
+        if "Successes" in m:
+            lines.append(f"  Successes:         {m['Successes']:.1f}")
+        if "Throughput" in m:
+            lines.append(f"  Throughput:        {m['Throughput']:.6g} Mbps")
+        if "Packet Loss" in m:
+            lines.append(f"  Packet Loss:       {m['Packet Loss']:.4f} %")
+        if "Avg Retx/MPDU" in m:
+            lines.append(f"  Avg Retx/MPDU:     {m['Avg Retx/MPDU']:.6g}")
+        if "Avg Queue Delay" in m:
+            lines.append(f"  Avg Queue Delay:   {m['Avg Queue Delay']:.3f} us (Enqueue->TxStart)")
+        if "Avg Access Delay" in m:
+            lines.append(f"  Avg Access Delay:  {m['Avg Access Delay']:.3f} us (TxStart->Ack)")
+        if "Avg MAC Delay" in m:
+            lines.append(f"  Avg MAC Delay:     {m['Avg MAC Delay']:.3f} us (Total: Enqueue->Ack)")
+        lines.append("")
+
+    lines.append("--- Per-AC Failure Statistics ---")
+    for ac, count in sorted(avg["failure_ac"].items()):
+        lines.append(f"{ac} Failures: {count:.1f}")
+
+    if avg["failure_reasons"]:
+        lines.append("")
+        lines.append("--- Failure Reasons by AC ---")
+        for reason, count in sorted(avg["failure_reasons"].items()):
+            lines.append(f"  {reason}: {count:.1f}")
+
+    return "\n".join(lines) + "\n"
+
+
+# ─────────────────────── Multi-Run Group Execution ───────────────────
+
+def aggregate_runs(run_results: list, n_pedca: int,
+                   data_rate: str, n_runs: int) -> dict:
+    csv_paths = [r["csv_path"] for r in run_results if r["csv_path"]]
+
+    avg_csv = OUT_DIR / csv_name(n_pedca, data_rate)
+    if csv_paths:
+        average_histograms(csv_paths, avg_csv, n_runs)
+        for cp in csv_paths:
+            try:
+                cp.unlink()
+            except OSError:
+                pass
+
+    stdouts = [r["stdout"] for r in run_results if r["success"]]
+    parsed_list = [parse_stats(s) for s in stdouts]
+    avg_stats = average_stats(parsed_list)
+    avg_stdout = format_stats_text(avg_stats, n_runs) if avg_stats else ""
+
+    total_elapsed = sum(r["elapsed"] for r in run_results)
+    n_success = sum(1 for r in run_results if r["success"])
+
+    return {
+        "success":   n_success > 0,
+        "n_pedca":   n_pedca,
+        "ratio":     n_pedca / N_STA,
+        "csv_path":  avg_csv if csv_paths else None,
+        "stdout":    avg_stdout,
+        "elapsed":   total_elapsed,
+        "n_success": n_success,
+        "n_runs":    n_runs,
+    }
+
+
+# ─────────────────────── Log Writer ──────────────────────────────────
+
+def write_log(data_rate: str, results: dict, n_runs: int, pedca_counts: list):
+    log_path = OUT_DIR / log_name(data_rate)
+    with open(log_path, "w") as f:
+        f.write(f"{'='*70}\n")
+        f.write(f"  Simulation Log — nSta={N_STA} (fixed)  dataRate={data_rate}\n")
+        f.write(f"  P-EDCA STA counts: {pedca_counts}\n")
+        f.write(f"  Runs per config: {n_runs}\n")
+        f.write(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"{'='*70}\n\n")
+
+        for n_pedca in pedca_counts:
+            if n_pedca not in results:
+                continue
+            r = results[n_pedca]
+            f.write(f"{'─'*70}\n")
+            f.write(f"  P-EDCA STAs = {n_pedca}/{N_STA}  (ratio={n_pedca/N_STA:.2f})\n")
+            f.write(f"  Successful runs: {r.get('n_success', '?')}/{r.get('n_runs', '?')}\n")
+            f.write(f"  Total elapsed: {r['elapsed']:.1f}s\n")
+            if r["csv_path"]:
+                f.write(f"  Averaged CSV: {r['csv_path']}\n")
+            f.write(f"{'─'*70}\n")
+            f.write(f"\n--- Averaged Statistics ---\n{r['stdout']}\n")
+            f.write(f"\n")
+
+
+# ─────────────────────── Data Loading ────────────────────────────────
+
+def load_histogram(csv_path: Path):
+    rows = []
+    with csv_path.open("r", newline="") as f:
+        reader = csv.DictReader(f)
+        required = {"bin_start_us", "bin_end_us", "probability"}
+        if not reader.fieldnames or not required.issubset(set(reader.fieldnames)):
+            raise ValueError(
+                f"CSV header must contain {sorted(required)}, got {reader.fieldnames}"
+            )
+        for row in reader:
+            rows.append({
+                "start": float(row["bin_start_us"]),
+                "end":   float(row["bin_end_us"]),
+                "prob":  float(row["probability"]),
+            })
+
+    if not rows:
+        raise ValueError("CSV has no data rows")
+
+    widths = [r["end"] - r["start"] for r in rows if r["end"] > r["start"]]
+    if not widths:
+        raise ValueError("Invalid bins")
+
+    widths_sorted = sorted(widths)
+    bin_width = widths_sorted[len(widths_sorted) // 2]
+
+    min_start = min(r["start"] for r in rows)
+    max_end   = max(r["end"]   for r in rows)
+
+    prob_lookup = {}
+    for r in rows:
+        key = round(r["start"] / bin_width) * bin_width
+        prob_lookup[key] = r["prob"]
+
+    full_starts, full_probs = [], []
+    cur = min_start
+    eps = bin_width * 1e-6
+    while cur < max_end - eps:
+        full_starts.append(cur)
+        key = round(cur / bin_width) * bin_width
+        full_probs.append(prob_lookup.get(key, 0.0))
+        cur += bin_width
+
+    mids = [s + 0.5 * bin_width for s in full_starts]
+    return mids, full_probs, min_start, max_end, bin_width
+
+
+# ─────────────────────── Tick Computation ────────────────────────────
+
+def nice_step(value: float) -> float:
+    if value <= 0:
+        return 1.0
+    exp = math.floor(math.log10(value))
+    frac = value / (10 ** exp)
+    if frac <= 1:   nice = 1
+    elif frac <= 2: nice = 2
+    elif frac <= 5: nice = 5
+    else:           nice = 10
+    return nice * (10 ** exp)
+
+def build_ticks(xmin: float, xmax: float, fig_width: float):
+    span = max(xmax - xmin, 1.0)
+    target_ticks = max(6, int(fig_width * 2.0))
+    step = nice_step(span / target_ticks)
+    first = math.floor(xmin / step) * step
+    ticks = []
+    t = first
+    while t <= xmax + step * 0.01:
+        ticks.append(round(t, 6))
+        t += step
+    return ticks
+
+
+# ─────────────────────── Color Palette ───────────────────────────────
+
+def get_count_colors(counts: list) -> dict:
+    n = len(counts)
+    cmap = cm.get_cmap("viridis", n)
+    return {c: cmap(i) for i, c in enumerate(counts)}
+
+
+# ─────────────────── Statistics Comparison File ──────────────────────
+
+def write_comparison_stats(results: dict, data_rate: str,
+                           n_runs: int, pedca_counts: list):
+    stats_path = OUT_DIR / f"pedca_count_sweep_statistics_{data_rate}.txt"
+    with open(stats_path, "w") as f:
+        f.write(f"{'='*100}\n")
+        f.write(f"  P-EDCA Count Sweep Statistics (Fixed nSta={N_STA})\n")
+        f.write(f"  dataRate = {data_rate}    simTime = {SIM_TIME}s    "
+                f"runs = {n_runs} (averaged)\n")
+        f.write(f"  P-EDCA counts: {pedca_counts}\n")
+        f.write(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"{'='*100}\n\n")
+
+        for n_pedca in pedca_counts:
+            if n_pedca in results and results[n_pedca]["success"]:
+                r = results[n_pedca]
+                f.write(f"P-EDCA STAs = {n_pedca}/{N_STA}  (ratio={n_pedca/N_STA:.2f})\n")
+                f.write(r["stdout"])
+                f.write(f"\n")
+            else:
+                f.write(f"P-EDCA STAs = {n_pedca}/{N_STA}\n")
+                f.write(f"  (simulation failed or not run)\n\n")
+
+    return stats_path
+
+
+# ─────────── Parse stats file for plots ───────────
+
+def parse_stats_file_for_metric(stats_path: Path, pedca_counts: list,
+                                metric_name: str) -> dict:
+    """
+    Generic parser: extract a named metric from the stats file.
+    metric_name can be: 'Channel Idle Time', 'Avg P-EDCA Tx Ratio',
+    'Packet Loss', 'Successes', 'Throughput', etc.
+    Returns: {n_pedca: value}
+    """
+    result = {}
+    if not stats_path.exists():
+        return result
+
+    text = stats_path.read_text()
+    current_n_pedca = None
+    in_ac_vo = False
+
+    for line in text.splitlines():
+        s = line.strip()
+
+        # Match "P-EDCA STAs = 5/20  (ratio=0.25)"
+        m = re.match(r"P-EDCA STAs\s*=\s*(\d+)/\d+", s)
+        if m:
+            current_n_pedca = int(m.group(1))
+            in_ac_vo = False
+            continue
+
+        if current_n_pedca is None:
+            continue
+
+        # Channel Idle
+        if metric_name == "channel_idle" and s.startswith("Channel Idle Time (AP):"):
+            m2 = re.search(r"([\d.]+)\s*%", s)
+            if m2:
+                result[current_n_pedca] = float(m2.group(1))
+
+        # Avg P-EDCA Tx Ratio
+        elif metric_name == "pedca_tx_ratio" and s.startswith("Avg P-EDCA Tx Ratio:"):
+            try:
+                val = float(s.split("Ratio:")[1].strip())
+                result[current_n_pedca] = val
+            except:
+                pass
+
+        # Avg P-EDCA Success Rate (pedcaTx / pedcaAttempt)
+        elif metric_name == "pedca_success_rate" and s.startswith("Avg P-EDCA Success Rate:"):
+            try:
+                val = float(s.split("Rate:")[1].strip())
+                result[current_n_pedca] = val
+            except:
+                pass
+
+        # Total Successes
+        elif metric_name == "total_successes" and s.startswith("Total Successes:"):
+            try:
+                result[current_n_pedca] = float(s.split(":")[1].strip())
+            except:
+                pass
+
+        # Total Failures
+        elif metric_name == "total_failures" and s.startswith("Total Failures:"):
+            try:
+                result[current_n_pedca] = float(s.split(":")[1].strip())
+            except:
+                pass
+
+        # Detect AC_VO section
+        elif s == "AC_VO:":
+            in_ac_vo = True
+            continue
+        elif s.startswith("AC_") and s.endswith(":") and s != "AC_VO:":
+            in_ac_vo = False
+            continue
+        elif s.startswith("---"):
+            in_ac_vo = False
+            continue
+
+        # AC_VO specific metrics
+        elif in_ac_vo:
+            if metric_name == "vo_packet_loss" and s.startswith("Packet Loss:"):
+                m2 = re.search(r"([\d.]+)\s*%", s)
+                if m2:
+                    result[current_n_pedca] = float(m2.group(1))
+                in_ac_vo = False
+
+            elif metric_name == "vo_throughput" and s.startswith("Throughput:"):
+                m2 = re.search(r"([\d.]+)\s*Mbps", s)
+                if m2:
+                    result[current_n_pedca] = float(m2.group(1))
+
+            elif metric_name == "vo_mac_delay" and s.startswith("Avg MAC Delay:"):
+                m2 = re.search(r"([\d.]+)\s*us", s)
+                if m2:
+                    result[current_n_pedca] = float(m2.group(1))
+
+            elif metric_name == "vo_successes" and s.startswith("Successes:"):
+                try:
+                    result[current_n_pedca] = float(s.split(":")[1].strip())
+                except:
+                    pass
+
+    return result
+
+
+# ─────────── Plot Helpers ───────────
+
+def plot_metric_vs_pedca_count(stats_path: Path, out_path: Path,
+                                metric_name: str, ylabel: str, title: str,
+                                data_rate: str, pedca_counts: list,
+                                n_runs: int = 1,
+                                fig_width: float = 12.0,
+                                fig_height: float = 6.0,
+                                dpi: int = 200):
+    """Generic plotter: one metric vs nPedca."""
+    data = parse_stats_file_for_metric(stats_path, pedca_counts, metric_name)
+
+    if not data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    x_vals = sorted(data.keys())
+    y_vals = [data[x] for x in x_vals]
+
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    ax.plot(x_vals, y_vals, marker="o", markersize=5, linewidth=1.5,
+            color="#4C72B0", label=f"nSta={N_STA}")
+    ax.fill_between(x_vals, y_vals, alpha=0.1, color="#4C72B0")
+
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
+    ax.set_title(f"{title}  —  nSta={N_STA}, {data_rate}{runs_label}",
+                 fontsize=13, fontweight="bold")
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.set_xticks(x_vals)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+def compute_pedca_success_share(stats_path: Path, pedca_counts: list) -> dict:
+    """
+    Compute P-EDCA success share:
+    For each nPedca config:
+      pedca_success_share = avg_pedca_tx_ratio * nPedca_successes_estimated
+    
+    Since avg_pedca_tx_ratio = avg(pedcaTx_i / edcaTx_i) over P-EDCA STAs,
+    and we know total successes, we can estimate:
+    
+    More precisely, this is the ratio that the simulation already outputs:
+    avg_pedca_tx_ratio = mean(pedcaTx[i] / edcaTx[i]) for i in P-EDCA STAs
+    
+    This represents: for each P-EDCA STA, what fraction of its successful
+    transmissions used P-EDCA.
+    """
+    pedca_ratio_data = parse_stats_file_for_metric(stats_path, pedca_counts, "pedca_tx_ratio")
+    total_succ_data = parse_stats_file_for_metric(stats_path, pedca_counts, "total_successes")
+    
+    result = {}
+    for n_pedca in pedca_counts:
+        if n_pedca in pedca_ratio_data and n_pedca in total_succ_data and n_pedca > 0:
+            # avg_pedca_tx_ratio is already pedcaTx/edcaTx averaged over P-EDCA STAs
+            avg_ratio = pedca_ratio_data[n_pedca]
+            total_succ = total_succ_data[n_pedca]
+            
+            # Estimate total P-EDCA successes:
+            # Each P-EDCA STA's pedcaTx/edcaTx ≈ avg_ratio
+            # Each STA contributes ~total_succ/N_STA successes
+            # So total pedca successes ≈ avg_ratio * n_pedca * (total_succ/N_STA)
+            # Global P-EDCA share = avg_ratio * n_pedca / N_STA
+            pedca_share = avg_ratio * n_pedca / N_STA
+            result[n_pedca] = pedca_share
+        elif n_pedca == 0:
+            result[n_pedca] = 0.0
+    
+    return result
+
+
+def plot_pedca_success_share(stats_path: Path, out_path: Path,
+                              data_rate: str, pedca_counts: list,
+                              n_runs: int = 1,
+                              fig_width: float = 12.0,
+                              fig_height: float = 6.0,
+                              dpi: int = 200):
+    """
+    Plot P-EDCA success share vs nPedca:
+    = estimated total P-EDCA successes / total successes
+    """
+    data = compute_pedca_success_share(stats_path, pedca_counts)
+    if not data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    x_vals = sorted(data.keys())
+    y_vals = [data[x] for x in x_vals]
+
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    ax.plot(x_vals, y_vals, marker="s", markersize=5, linewidth=1.5,
+            color="#55A868", label=f"nSta={N_STA}")
+    ax.fill_between(x_vals, y_vals, alpha=0.1, color="#55A868")
+
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
+    ax.set_ylabel("P-EDCA Success Share (estimated)", fontsize=11)
+    ax.set_title(
+        f"Estimated P-EDCA Success / Total Success  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=13, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.set_xticks(x_vals)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+def plot_combined_metrics(stats_path: Path, out_path: Path,
+                           data_rate: str, pedca_counts: list,
+                           n_runs: int = 1,
+                           fig_width: float = 14.0,
+                           fig_height: float = 18.0,
+                           dpi: int = 200):
+    """
+    Generate a multi-subplot figure with all key metrics vs nPedca.
+    6 subplots:
+      1. VO Throughput
+      2. VO Packet Loss
+      3. VO Avg MAC Delay
+      4. Channel Idle Time
+      5. Avg P-EDCA Tx Ratio (per P-EDCA STA: pedcaTx/edcaTx)
+      6. Estimated P-EDCA Success Share (global)
+    """
+    metrics = [
+        ("vo_throughput", "VO Throughput (Mbps)", "VO Throughput vs P-EDCA STAs", "#4C72B0"),
+        ("vo_packet_loss", "VO Packet Loss (%)", "VO Packet Loss vs P-EDCA STAs", "#C44E52"),
+        ("vo_mac_delay", "VO Avg MAC Delay (µs)", "VO Avg MAC Delay vs P-EDCA STAs", "#DD8452"),
+        ("channel_idle", "Channel Idle Time (%)", "Channel Idle Time vs P-EDCA STAs", "#55A868"),
+        ("pedca_tx_ratio", "Per-STA P-EDCA Tx Ratio\n(pedcaTx/edcaTx per P-EDCA STA)", 
+         "Per-P-EDCA-STA: pedcaTx / edcaTx", "#8172B3"),
+        ("pedca_success_rate", "P-EDCA Success Rate\n(pedcaTx/pedcaAttempt per P-EDCA STA)",
+         "P-EDCA Success Rate: pedcaTx / pedcaAttempt", "#C44E52"),
+    ]
+
+    fig, axes = plt.subplots(len(metrics) + 1, 1, figsize=(fig_width, fig_height))
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    for idx, (metric_name, ylabel, title, color) in enumerate(metrics):
+        ax = axes[idx]
+        data = parse_stats_file_for_metric(stats_path, pedca_counts, metric_name)
+        if data:
+            x_vals = sorted(data.keys())
+            y_vals = [data[x] for x in x_vals]
+            ax.plot(x_vals, y_vals, marker="o", markersize=4, linewidth=1.2, color=color)
+            ax.fill_between(x_vals, y_vals, alpha=0.08, color=color)
+            ax.set_xticks(x_vals)
+        ax.set_xlabel("Number of P-EDCA STAs", fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.set_title(f"{title}  —  nSta={N_STA}, {data_rate}{runs_label}",
+                     fontsize=11, fontweight="bold")
+        ax.grid(True, alpha=0.3, linestyle="--")
+        ax.tick_params(axis="x", labelsize=7, rotation=45)
+
+    # Last subplot: P-EDCA Success Share
+    ax = axes[-1]
+    share_data = compute_pedca_success_share(stats_path, pedca_counts)
+    if share_data:
+        x_vals = sorted(share_data.keys())
+        y_vals = [share_data[x] for x in x_vals]
+        ax.plot(x_vals, y_vals, marker="s", markersize=4, linewidth=1.2, color="#C4A000")
+        ax.fill_between(x_vals, y_vals, alpha=0.08, color="#C4A000")
+        ax.set_xticks(x_vals)
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=9)
+    ax.set_ylabel("Estimated P-EDCA Success Share", fontsize=9)
+    ax.set_title(
+        f"Estimated P-EDCA Success / Total Success  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=11, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.tick_params(axis="x", labelsize=7, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+def _compute_percentile_xlim(all_series: list, percentile: float = 0.95) -> float:
+    combined = defaultdict(float)
+    for mids, probs in all_series:
+        for m, p in zip(mids, probs):
+            combined[m] += p
+    if not combined:
+        return float("inf")
+    n_series = len(all_series)
+    sorted_mids = sorted(combined.keys())
+    total = sum(combined.values()) / n_series
+    if total <= 0:
+        return float("inf")
+    cumulative = 0.0
+    target = percentile * total
+    for m in sorted_mids:
+        cumulative += combined[m] / n_series
+        if cumulative >= target:
+            return m
+    return sorted_mids[-1] if sorted_mids else float("inf")
+
+
+def plot_delay_pdf_overlay(results: dict, out_path: Path,
+                            data_rate: str, pedca_counts: list,
+                            n_runs: int = 1,
+                            fig_width: float = 14.0,
+                            fig_height: float = 10.0,
+                            dpi: int = 200):
+    """
+    Overlay PDF and CDF for selected pedca counts on one figure.
+    """
+    # Select a subset for readability (0, 5, 10, 15, 20)
+    selected = [c for c in [0, 5, 10, 15, 20] if c in pedca_counts]
+    if not selected:
+        selected = pedca_counts
+
+    colors = get_count_colors(selected)
+    fig, (ax_pdf, ax_cdf) = plt.subplots(2, 1, figsize=(fig_width, fig_height))
+
+    loaded_data = {}
+    all_series = []
+    global_xmin = float("inf")
+
+    for n_pedca in selected:
+        csv_path = OUT_DIR / csv_name(n_pedca, data_rate)
+        if not csv_path.exists():
+            continue
+        try:
+            mids, probs, xmin, xmax, bw = load_histogram(csv_path)
+        except Exception:
+            continue
+        loaded_data[n_pedca] = (mids, probs, bw)
+        all_series.append((mids, probs))
+        global_xmin = min(global_xmin, xmin)
+
+    if not loaded_data:
+        plt.close(fig)
+        return None
+
+    x_95 = _compute_percentile_xlim(all_series, 0.95)
+    zoom_xmax = x_95 * 1.10
+
+    runs_label = f", avg of {n_runs} runs" if n_runs > 1 else ""
+
+    # PDF
+    for n_pedca in selected:
+        if n_pedca not in loaded_data:
+            continue
+        mids, probs, bw = loaded_data[n_pedca]
+        z_mids = [m for m in mids if m <= zoom_xmax]
+        z_probs = [p for m, p in zip(mids, probs) if m <= zoom_xmax]
+        if not z_mids:
+            continue
+        label = f"P-EDCA {n_pedca}/{N_STA}"
+        color = colors[n_pedca]
+        ax_pdf.plot(z_mids, z_probs, linewidth=0.8, color=color, label=label)
+        ax_pdf.fill_between(z_mids, z_probs, alpha=0.08, color=color)
+
+    ax_pdf.set_xlim(global_xmin, zoom_xmax)
+    ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+    ax_pdf.set_xticks(ticks)
+    ax_pdf.tick_params(axis="x", labelsize=8, rotation=45)
+    ax_pdf.set_xlabel("Delay (µs)", fontsize=10)
+    ax_pdf.set_ylabel("Probability", fontsize=11)
+    ax_pdf.set_title(
+        f"VO Delay PDF (zoomed to 95th pctl)  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=12, fontweight="bold"
+    )
+    ax_pdf.grid(True, alpha=0.25, linestyle="--")
+    ax_pdf.legend(loc="upper right", fontsize=8)
+
+    # CDF
+    for n_pedca in selected:
+        if n_pedca not in loaded_data:
+            continue
+        mids, probs, bw = loaded_data[n_pedca]
+        full_total = sum(probs)
+        if full_total <= 0:
+            continue
+        cdf_mids, cdf_vals = [], []
+        running = 0.0
+        for m, p in zip(mids, probs):
+            running += p
+            if m <= zoom_xmax:
+                cdf_mids.append(m)
+                cdf_vals.append(running / full_total)
+        if not cdf_mids:
+            continue
+        label = f"P-EDCA {n_pedca}/{N_STA}"
+        color = colors[n_pedca]
+        ax_cdf.plot(cdf_mids, cdf_vals, linewidth=1.0, color=color, label=label)
+
+    ax_cdf.set_xlim(global_xmin, zoom_xmax)
+    ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+    ax_cdf.set_xticks(ticks)
+    ax_cdf.set_ylim(0, 1.02)
+    ax_cdf.tick_params(axis="x", labelsize=8, rotation=45)
+    ax_cdf.set_xlabel("Delay (µs)", fontsize=10)
+    ax_cdf.set_ylabel("Cumulative Probability", fontsize=11)
+    ax_cdf.set_title(
+        f"VO Delay CDF  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=12, fontweight="bold"
+    )
+    ax_cdf.grid(True, alpha=0.25, linestyle="--")
+    ax_cdf.legend(loc="lower right", fontsize=8)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+# ──────────────────────────── Main ───────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="P-EDCA Count Sweep: fixed 20 STAs, sweep P-EDCA count 0-20"
+    )
+    parser.add_argument("--plot-only", action="store_true",
+                        help="Skip simulations, only re-plot existing data")
+    parser.add_argument("--workers", type=int, default=MAX_WORKERS,
+                        help=f"Max parallel workers (default: {MAX_WORKERS})")
+    parser.add_argument("--runs", type=int, default=N_RUNS,
+                        help=f"Runs per scenario to average (default: {N_RUNS})")
+    parser.add_argument("--counts", nargs="+", type=int, default=None,
+                        help=f"P-EDCA STA counts to sweep (default: 0..20)")
+    parser.add_argument("--fig-width",  type=float, default=14.0)
+    parser.add_argument("--fig-height", type=float, default=6.0)
+    parser.add_argument("--dpi",        type=int,   default=200)
+    args = parser.parse_args()
+
+    data_rate = DATA_RATE
+    sim_time  = SIM_TIME
+    bin_us    = BIN_WIDTH
+    workers   = args.workers
+    n_runs    = args.runs
+    pedca_counts = sorted(args.counts) if args.counts else PEDCA_COUNTS
+
+    print(f"\n╔══════════════════════════════════════════════════════════╗")
+    print(f"║  P-EDCA Count Sweep (Fixed nSta={N_STA})                ║")
+    print(f"║  P-EDCA counts = {pedca_counts}")
+    print(f"║  dataRate = {data_rate}    simTime = {sim_time}s")
+    print(f"║  runs = {n_runs}    workers = {workers}")
+    print(f"║  binary = {SIM_BINARY}")
+    print(f"╚══════════════════════════════════════════════════════════╝\n")
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    t_total = time.time()
+
+    stats_path = OUT_DIR / f"pedca_count_sweep_statistics_{data_rate}.txt"
+
+    if args.plot_only:
+        # ── Plot-only mode ──
+        for n_pedca in pedca_counts:
+            p = OUT_DIR / csv_name(n_pedca, data_rate)
+            if p.exists():
+                print(f"  [plot-only] Found: {p.name}")
+            else:
+                print(f"  [plot-only] ✗ Missing: {p.name}")
+    else:
+        # ── Parallel simulation mode ──
+        results = {}
+        total_sims = len(pedca_counts) * n_runs
+
+        print(f"  Launching {len(pedca_counts)} configs × {n_runs} runs = {total_sims} simulations")
+        print(f"  ({workers} concurrent simulations)\n")
+
+        raw_results = defaultdict(list)
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {}
+            for n_pedca in pedca_counts:
+                for run_idx in range(n_runs):
+                    fut = executor.submit(
+                        run_single_sim, n_pedca, data_rate,
+                        sim_time, bin_us, run_idx
+                    )
+                    futures[fut] = (n_pedca, run_idx)
+
+            done_count = 0
+            for future in as_completed(futures):
+                n_pedca, run_idx = futures[future]
+                done_count += 1
+                try:
+                    r = future.result()
+                    raw_results[n_pedca].append(r)
+                    status = "✔" if r["success"] else "✗"
+                    if done_count % max(1, total_sims // 40) == 0 or not r["success"]:
+                        print(f"  [{done_count}/{total_sims}] {status} "
+                              f"nPedca={n_pedca:>2} run={run_idx} {r['elapsed']:.1f}s")
+                except Exception as e:
+                    print(f"  ✗ nPedca={n_pedca} run={run_idx} EXCEPTION: {e}")
+
+        # ── Aggregate ──
+        print(f"\n{'─'*60}")
+        print(f"  Aggregating results...")
+        print(f"{'─'*60}")
+
+        for n_pedca in sorted(raw_results.keys()):
+            run_list = raw_results[n_pedca]
+            if run_list:
+                agg = aggregate_runs(run_list, n_pedca, data_rate, n_runs)
+                results[n_pedca] = agg
+                status = "✔" if agg["success"] else "✗"
+                print(f"  {status} nPedca={n_pedca:>2}  "
+                      f"{agg['n_success']}/{n_runs} runs OK  "
+                      f"elapsed={agg['elapsed']:.1f}s")
+
+        # ── Write log ──
+        write_log(data_rate, results, n_runs, pedca_counts)
+
+        # ── Statistics comparison ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating statistics comparison...")
+        print(f"{'─'*60}")
+        stats_path = write_comparison_stats(results, data_rate, n_runs, pedca_counts)
+        print(f"    ✔ {stats_path.name}  ({stats_path.stat().st_size:,} bytes)")
+
+    # ── Generate plots ──
+    print(f"\n{'─'*60}")
+    print(f"  Generating plots...")
+    print(f"{'─'*60}")
+
+    # 1. Combined metrics plot (6 subplots)
+    combined_pdf = OUT_DIR / f"combined_metrics_vs_pedca_count_{data_rate}.pdf"
+    result = plot_combined_metrics(
+        stats_path, combined_pdf, data_rate, pedca_counts, n_runs,
+        args.fig_width, 28.0, args.dpi
+    )
+    if result:
+        print(f"    ✔ {combined_pdf.name}")
+    else:
+        print(f"    ⚠ No data for combined metrics plot")
+
+    # 2. Individual metric plots
+    individual_plots = [
+        ("vo_packet_loss", "VO Packet Loss (%)", "VO Packet Loss vs P-EDCA STAs",
+         f"vo_packet_loss_vs_pedca_count_{data_rate}.pdf"),
+        ("channel_idle", "Channel Idle Time (%)", "Channel Idle Time vs P-EDCA STAs",
+         f"channel_idle_vs_pedca_count_{data_rate}.pdf"),
+        ("pedca_tx_ratio", "Per-STA P-EDCA Tx Ratio\n(pedcaTx / edcaTx)", 
+         "Per-P-EDCA-STA: pedcaTx / edcaTx",
+         f"pedca_tx_ratio_vs_pedca_count_{data_rate}.pdf"),
+        ("pedca_success_rate", "P-EDCA Success Rate\n(pedcaTx / pedcaAttempt)",
+         "P-EDCA Success Rate: pedcaTx / pedcaAttempt",
+         f"pedca_success_rate_vs_pedca_count_{data_rate}.pdf"),
+        ("vo_throughput", "VO Throughput (Mbps)", "VO Throughput vs P-EDCA STAs",
+         f"vo_throughput_vs_pedca_count_{data_rate}.pdf"),
+        ("vo_mac_delay", "VO Avg MAC Delay (µs)", "VO Avg MAC Delay vs P-EDCA STAs",
+         f"vo_mac_delay_vs_pedca_count_{data_rate}.pdf"),
+    ]
+
+    for metric, ylabel, title, filename in individual_plots:
+        out_pdf = OUT_DIR / filename
+        result = plot_metric_vs_pedca_count(
+            stats_path, out_pdf, metric, ylabel, title,
+            data_rate, pedca_counts, n_runs,
+            args.fig_width, args.fig_height, args.dpi
+        )
+        if result:
+            print(f"    ✔ {filename}")
+        else:
+            print(f"    ⚠ No data for {metric}")
+
+    # 3. P-EDCA Success Share plot
+    share_pdf = OUT_DIR / f"pedca_success_share_vs_pedca_count_{data_rate}.pdf"
+    result = plot_pedca_success_share(
+        stats_path, share_pdf, data_rate, pedca_counts, n_runs,
+        args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {share_pdf.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA success share")
+
+    # 4. Delay PDF/CDF overlay
+    overlay_pdf = OUT_DIR / f"vo_delay_pdf_cdf_overlay_{data_rate}.pdf"
+    result = plot_delay_pdf_overlay(
+        {}, overlay_pdf, data_rate, pedca_counts, n_runs,
+        args.fig_width, 10.0, args.dpi
+    )
+    if result:
+        print(f"    ✔ {overlay_pdf.name}")
+    else:
+        print(f"    ⚠ No data for delay PDF/CDF overlay")
+
+    elapsed_total = time.time() - t_total
+
+    # ── Summary ──
+    print(f"\n{'═'*60}")
+    print(f"  Sweep complete!  Total time: {elapsed_total:.1f}s")
+    print(f"  Output directory: {OUT_DIR}")
+    print(f"\n  CSV files:")
+    for f in sorted(OUT_DIR.glob(f"*_vo_delay_pdf_*_{data_rate}.csv")):
+        if "_run" not in f.name:
+            print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
+    print(f"\n  Plot files:")
+    for f in sorted(OUT_DIR.glob(f"*.pdf")):
+        print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
+    print(f"\n  Statistics:")
+    for f in sorted(OUT_DIR.glob(f"*statistics*.txt")):
+        print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
+    print(f"{'═'*60}\n")
+
+
+if __name__ == "__main__":
+    main()

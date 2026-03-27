@@ -29,6 +29,54 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("PedcaVerificationNSta");
 
+static double g_apIdleUs = 0;
+static double g_warmupTime = 1.0;
+static double g_simTime = 10.0;
+
+static std::vector<uint32_t> g_pedcaTxCount;
+static std::vector<uint32_t> g_edcaTxCount;
+static std::vector<uint32_t> g_pedcaAttemptCount;
+
+void PedcaTxTrace(uint32_t staId, Ptr<const Packet> packet)
+{
+    if (staId < g_pedcaTxCount.size()) {
+        g_pedcaTxCount[staId]++;
+    }
+}
+
+void EdcaTxTrace(uint32_t staId, Ptr<const Packet> packet)
+{
+    if (staId < g_edcaTxCount.size()) {
+        g_edcaTxCount[staId]++;
+    }
+}
+
+void PedcaAttemptTrace(uint32_t staId, Ptr<const Packet> packet)
+{
+    if (staId < g_pedcaAttemptCount.size()) {
+        g_pedcaAttemptCount[staId]++;
+    }
+}
+
+void ApPhyStateTrace(std::string context, Time start, Time duration, ns3::WifiPhyState state)
+{
+    if (state == ns3::WifiPhyState::IDLE) {
+        double startUs = start.GetMicroSeconds();
+        double endUs = startUs + duration.GetMicroSeconds();
+        
+        double windowStartUs = g_warmupTime * 1000000.0;
+        double windowEndUs = g_simTime * 1000000.0;
+        
+        // Calculate overlap of [startUs, endUs] with the evaluation window [windowStartUs, windowEndUs]
+        double overlapStart = std::max(startUs, windowStartUs);
+        double overlapEnd = std::min(endUs, windowEndUs);
+        
+        if (overlapEnd > overlapStart) {
+            g_apIdleUs += (overlapEnd - overlapStart);
+        }
+    }
+}
+
 // Helper to get AC name
 static const char* AcName(uint8_t ac)
 {
@@ -58,7 +106,7 @@ static uint8_t TidToAc(uint8_t tid)
 
 int main(int argc, char* argv[])
 {
-  uint32_t nSta = 10;
+  uint32_t nSta = 30;
   double simTime = 10.0;
   std::string dataRate = "1Mbps";
   uint32_t payloadSize = 1000;
@@ -82,6 +130,13 @@ int main(int argc, char* argv[])
   if (verbose) {
     LogComponentEnable("PedcaVerificationNSta", LOG_LEVEL_INFO);
   }
+  
+  g_warmupTime = warmupTime;
+  g_simTime = simTime;
+  
+  g_pedcaTxCount.assign(nSta, 0);
+  g_edcaTxCount.assign(nSta, 0);
+  g_pedcaAttemptCount.assign(nSta, 0);
   
   NodeContainer wifiStaNodes;
   wifiStaNodes.Create(nSta);
@@ -195,6 +250,19 @@ int main(int argc, char* argv[])
       clientApp.Stop(Seconds(simTime));
   }
 
+  std::string apPhyStatePath = "/NodeList/" + std::to_string(wifiApNode.Get(0)->GetId()) + "/DeviceList/*/$ns3::WifiNetDevice/Phy/State/State";
+  Config::Connect(apPhyStatePath, MakeCallback(&ApPhyStateTrace));
+
+  for (uint32_t i = 0; i < nSta; ++i)
+  {
+      if (i < nPedcaSta) {
+          std::string pathPrefix = "/NodeList/" + std::to_string(wifiStaNodes.Get(i)->GetId()) + "/DeviceList/*/$ns3::WifiNetDevice/Mac/FrameExchangeManagers/*/$ns3::QosFrameExchangeManager/";
+          Config::ConnectWithoutContext(pathPrefix + "PedcaTx", MakeBoundCallback(&PedcaTxTrace, i));
+          Config::ConnectWithoutContext(pathPrefix + "EdcaTx", MakeBoundCallback(&EdcaTxTrace, i));
+          Config::ConnectWithoutContext(pathPrefix + "PedcaAttempt", MakeBoundCallback(&PedcaAttemptTrace, i));
+      }
+  }
+
   Simulator::Stop(Seconds(simTime + 1.0));
   Simulator::Run();
   
@@ -202,9 +270,42 @@ int main(int argc, char* argv[])
   double duration = simTime - warmupTime;
   if (duration <= 0) duration = 1.0;
 
+  double avgPedcaTxRatio = 0.0;
+  double avgPedcaSuccessRate = 0.0;
+  if (nPedcaSta > 0) {
+      double totalRatio = 0.0;
+      double totalSuccessRate = 0.0;
+      uint32_t staWithAttempts = 0;
+      for (uint32_t i = 0; i < nPedcaSta; ++i) {
+          uint32_t edcaTx = g_edcaTxCount[i];
+          uint32_t pedcaTx = g_pedcaTxCount[i];
+          uint32_t pedcaAttempt = g_pedcaAttemptCount[i];
+          double ratio = 0.0;
+          if (edcaTx > 0) {
+              ratio = (double)pedcaTx / (double)edcaTx;
+          }
+          totalRatio += ratio;
+          if (pedcaAttempt > 0) {
+              totalSuccessRate += (double)pedcaTx / (double)pedcaAttempt;
+              staWithAttempts++;
+          }
+      }
+      avgPedcaTxRatio = totalRatio / nPedcaSta;
+      if (staWithAttempts > 0) {
+          avgPedcaSuccessRate = totalSuccessRate / staWithAttempts;
+      }
+  }
+
   std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
   std::cout << "P-EDCA Ratio: " << pedcaRatio << "\n";
   std::cout << "P-EDCA STAs: " << nPedcaSta << "/" << nSta << "\n";
+  std::cout << "Avg P-EDCA Tx Ratio: " << avgPedcaTxRatio << "\n";
+  std::cout << "Avg P-EDCA Success Rate: " << avgPedcaSuccessRate << "\n";
+  
+  double totalSimUs = (simTime - warmupTime) * 1000000.0;
+  double idleRatio = (totalSimUs > 0) ? (g_apIdleUs / totalSimUs * 100.0) : 0.0;
+  std::cout << "Channel Idle Time (AP): " << idleRatio << " % (" << g_apIdleUs << " us / " << totalSimUs << " us)\n";
+  
   std::cout << "Total Successes:       " << wifiTxStats.GetSuccesses() << "\n";
   std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
   std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";

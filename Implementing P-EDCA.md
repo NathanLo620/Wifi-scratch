@@ -1,15 +1,15 @@
 # Implementing P-EDCA in ns-3.45 — Current State
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-03-19
 **Status:** Implemented & Under Verification
 
 ---
 
 ## 1. Overview
 
-P-EDCA (Prioritized EDCA) is a two-stage channel access mechanism specified in the 802.11be draft.
-When a STA's VO transmissions repeatedly fail (QSRC ≥ 2), it switches to P-EDCA mode:
-- **Stage 1:** Send a DS-CTS (Defer Signal CTS) to reserve a 97µs contention window
-- **Stage 2:** Contend with reduced parameters (CW=7, AIFSN=2) during the reserved window
+P-EDCA (Prioritized EDCA) is a two-stage channel access mechanism specified in the 802.11be/bn draft.
+[cite_start]When a STA's VO transmissions repeatedly fail (QSRC ≥ 2) and the short retry limit allows[cite: 82], it switches to P-EDCA mode:
+- [cite_start]**Stage 1:** Send a DS-CTS (Defer Signal CTS) initiated by EDCAF[AC_VO] [cite: 36, 40] [cite_start]to reserve a 77µs protected contention duration for the 5/6GHz band[cite: 141, 189].
+- [cite_start]**Stage 2:** Contend with reduced parameters (CW=7, AIFSN=2) during the reserved window, while other EDCAFs are suspended with their states (Backoff, CWmin, CWmax, and QSRC) remaining unchanged[cite: 254].
 
 ---
 
@@ -37,7 +37,7 @@ bool m_pedcaPending{false};              // True after DS-CTS sent, waiting for 
 uint8_t m_psrc{0};                       // P-EDCA STA Retry Counter (consecutive DS-CTS attempts)
 // Note: m_qsrc is the existing QosFrameExchangeManager QSRC counter (reused)
 
-// P-EDCA thresholds (per 802.11be draft spec)
+// P-EDCA thresholds (per 802.11bn draft spec)
 static constexpr uint16_t PEDCA_RETRY_THRESHOLD = 2;       // dot11PEDCARetryThreshold
 static constexpr uint8_t PEDCA_CONSECUTIVE_ATTEMPT = 1;    // dot11PEDCAConsecutiveAttempt
 
@@ -45,7 +45,7 @@ static constexpr uint8_t PEDCA_CONSECUTIVE_ATTEMPT = 1;    // dot11PEDCAConsecut
 Time m_pedcaCtsTxEnd{0};  // DS-CTS transmission end time for timing verification
 
 // P-EDCA Stage 2 collision tracking
-bool m_pedcaStage2Active{false};  // True when in Stage 2 contention
+bool m_pedcaStage2Active{false};  // True when in P-EDCA Stage 2 contention
 ```
 
 ### 3.2 PedcaSupported Attribute (`wifi-mac.cc`, L83-89)
@@ -66,14 +66,15 @@ wifi.SetAttribute("PedcaSupported", BooleanValue(true));  // per-STA
 
 Located in `QosFrameExchangeManager::StartTransmission()`:
 
-```
+```text
 Entry: StartTransmission(edca, txopDuration)
   ↓
 Check: m_mac->GetPedcaSupported() && edca->GetAccessCategory() == AC_VO
   ↓
 Trigger Check:
-  - qsrcOk = (m_qsrc >= PEDCA_RETRY_THRESHOLD)    // QSRC ≥ 2
-  - psrcOk  = (m_psrc < PEDCA_CONSECUTIVE_ATTEMPT)  // PSRC < 1
+  - qsrcOk = (m_qsrc >= PEDCA_RETRY_THRESHOLD)              // QSRC ≥ 2
+  - psrcOk  = (m_psrc < PEDCA_CONSECUTIVE_ATTEMPT)          // PSRC < 1
+  - [cite_start]retryLimitOk = (dot11ShortRetryLimit > PEDCA_RETRY_THRESHOLD) // Short retry limit check [cite: 82]
   ↓
 Deferral Rules (L262-298):
   - waitingForResponse → defer
@@ -81,17 +82,17 @@ Deferral Rules (L262-298):
   - PHY busy (TX/RX/CCA/Switching) → defer
   - On deferral: NotifyChannelReleased + force backoff=0 for ASAP retry
   ↓
-Stage 1 (L301-508):  qsrcOk && psrcOk && !m_pedcaPending
-  → Construct DS-CTS frame
+Stage 1 (L301-508):  qsrcOk && psrcOk && retryLimitOk && !m_pedcaPending
+  [cite_start]→ Construct DS-CTS frame (Initiated by EDCAF[AC_VO]) [cite: 36, 40]
   → ForwardMpduDown (transmit)
   → PSRC++
   → Override EDCA params: CWmin=7, CWmax=7, AIFSN=2
-  → Disable non-VO ACs during window
+  [cite_start]→ Suspend non-VO ACs (keep their Backoff, CW, QSRC unchanged) [cite: 254]
   → Schedule Stage 2 entry callback at CTS TxEnd
   → return false (no data yet)
   ↓
 Stage 2 (L510-574):  m_pedcaPending == true
-  → Check gap: (Now - m_pedcaCtsTxEnd) ≤ 97µs?
+  [cite_start]→ Check gap: (Now - m_pedcaCtsTxEnd) ≤ 77µs? [cite: 141, 189]
   → YES: stage2Valid = true, proceed with data TX
   → NO:  TIMING EXPIRED, fallback to normal EDCA
   → Always: restore VO default params (CWmin=3, CWmax=7, AIFSN=2)
@@ -107,7 +108,7 @@ ctsHeader.SetDsNotTo();
 ctsHeader.SetNoMoreFragments();
 ctsHeader.SetNoRetry();
 ctsHeader.SetAddr1(Mac48Address("00:0F:AC:47:43:00"));  // Fixed P-EDCA RA (per spec)
-ctsHeader.SetDuration(MicroSeconds(97));                  // P-EDCA contention window
+ctsHeader.SetDuration(MicroSeconds(77));                  [cite_start]// P-EDCA 5/6GHz protected duration [cite: 141, 189]
 
 WifiTxVector ctsTxVector;
 ctsTxVector.SetMode(WifiMode("OfdmRate6Mbps"));  // non-HT 6 Mbps (per spec)
@@ -117,15 +118,15 @@ ctsTxVector.SetChannelWidth(20);
 ```
 
 **Key specs:**
-- **RA = `00:0F:AC:47:43:00`** — fixed per 802.11be draft (NOT the STA's own address)
-- **Duration = 97µs** — SIFS + AIFSN×Slot + CWmax×Slot ≈ 97µs
+- **RA = `00:0F:AC:47:43:00`** — fixed per 802.11bn draft (NOT the STA's own address)
+- [cite_start]**Duration = 77µs** — Reduced from 97µs to allow responder CTS transmission without NAV blocking (5/6GHz band)[cite: 141, 189].
 - **Rate = 6 Mbps** non-HT OFDM (per spec section 3.5)
 - **Airtime ≈ 44µs** (24µs CTS payload + 20µs PHY header)
 
 ### 3.5 Stage 2 Entry Callback (L460-502)
 
 After CTS TX ends, a callback waits for PHY to become IDLE:
-```
+```text
 Schedule at CTS_TxEnd:
   if PHY still in TX → retry every 1µs (up to 200 retries)
   else:
@@ -138,11 +139,12 @@ Schedule at CTS_TxEnd:
 ### 3.6 TransmissionSucceeded (L959-983)
 
 On **any VO TX success** (whether P-EDCA or normal EDCA):
-```
+```text
 QSRC = 0
 PSRC = 0
 m_pedcaStage2Active = false
 m_pedcaPending = false
+// Resume suspended EDCAFs (VI, BE, BK)
 ```
 
 ### 3.7 TransmissionFailed (L1026-1092)
@@ -150,23 +152,23 @@ m_pedcaPending = false
 Two paths:
 
 **Path A: Stage 2 Collision** (`m_pedcaStage2Active == true`, L1031-1069):
-```
+```text
 CW expansion: CW = min(CWmax, 2^QSRC × (CWmin+1) - 1)
-QSRC++
+[cite_start]QSRC++ (Following baseline EDCA backoff procedure) [cite: 280, 281]
 If PSRC >= PEDCA_CONSECUTIVE_ATTEMPT → PSRC = 0 (exhausted)
 m_pedcaStage2Active = false
 m_pedcaPending = false
 ```
 
 **Path B: Normal VO Failure** (P-EDCA enabled, non-Stage-2, L1072-1085):
-```
+```text
 QSRC++
 If m_pedcaPending → reset to false
 ```
 
 **P-EDCA Priority Override** (L1096-1120):
-When P-EDCA conditions are met (qsrcOk && psrcOk) at failure time:
-```
+When P-EDCA conditions are met (qsrcOk && psrcOk && retryLimitOk) at failure time:
+```text
 Force backoff = 0 slots → immediate retry after AIFS
 This gives P-EDCA VO higher priority than normal EDCA VO
 ```
@@ -174,7 +176,7 @@ This gives P-EDCA VO higher priority than normal EDCA VO
 ### 3.8 NAV Handling for DS-CTS (`frame-exchange-manager.cc`)
 
 **Reception chain:**
-```
+```text
 PHY decode success → Receive() → PostProcessFrame() → UpdateNav()
                                   (called OUTSIDE addr1 filter — always executed)
 ```
@@ -184,7 +186,7 @@ PHY decode success → Receive() → PostProcessFrame() → UpdateNav()
 if (hdr.GetAddr1() == m_self)  // "00:0F:AC:47:43:00" != m_self → NOT skipped
     return;  // Only CTS-to-Self skips NAV update
 
-// DS-CTS passes through → NAV is updated with 97µs duration ✓
+[cite_start]// DS-CTS passes through → NAV is updated with 77µs duration ✓ [cite: 141, 189]
 ```
 
 **NAV is correctly set for DS-CTS** because:
@@ -209,35 +211,35 @@ void QosTxop::SetPedcaBypassBackoff(bool bypass, uint8_t linkId)
 
 ### Expected Timing (DSr = 0)
 
-```
+```text
 Last Busy End
   │
   ├── SIFS (16µs) ──┤
   │                  ├── AIFSN × Slot (2×9 = 18µs) ──┤
   │                  │                                 ├── DS-CTS TX (44µs) ──┤
-  │                  │                                 │                       ├── Stage 2 Window (97µs) ──┤
+  │                  │                                 │                       ├── Stage 2 Window (77µs) ──┤
   │                  │                                 │                       │                            │
-  t₀                t₀+16µs                          t₀+34µs                 t₀+78µs                    t₀+175µs
+  t₀                t₀+16µs                          t₀+34µs                 t₀+78µs                    t₀+155µs
                      ↑                                 ↑                       ↑
                      accessGrantStart                  DS-CTS TX start         CTS TxEnd → Stage 2 begins
 ```
 
 ### Stage 2 Contention Window
 
-```
+```text
 CTS TxEnd
   │
   ├── AIFS (34µs) ── min gap ──┤
   │                             ├── Backoff [0-7] × Slot (0-63µs) ──┤
   │                             │                                    │
-  CTS TxEnd                    +34µs                                +97µs
+  CTS TxEnd                    +34µs                                +77µs
   │                             ↑                                    ↑
   │                        Earliest data TX                     Latest data TX
   │                                                             (NAV expires)
 ```
 
 **Verification criteria:**
-- `Gap = DataTXStart - CTSTxEnd` must be ∈ [34µs, 97µs]
+- [cite_start]`Gap = DataTXStart - CTSTxEnd` must be ∈ [34µs, 77µs] [cite: 141, 189]
 - Gap should NEVER be exactly 16µs (that would mean SIFS-only, which violates P-EDCA)
 
 ---
@@ -295,7 +297,7 @@ DS-CTS NAV is set only at STAs whose PHY is **IDLE** at reception time:
 - **High idle**: full NAV (10/10 STAs)
 
 ### 6.3 TIMING EXPIRED
-When medium is busy during Stage 2, the gap exceeds 97µs → P-EDCA falls back to EDCA.
+[cite_start]When medium is busy during Stage 2, the gap exceeds 77µs → P-EDCA falls back to EDCA. [cite: 141, 189]
 This is correct spec behavior (NAV protection expired).
 
 ---
@@ -304,7 +306,7 @@ This is correct spec behavior (NAV protection expired).
 
 ```bash
 # Build
-cd /home/wmnlab/Desktop/ns-3.45
+cd ~/Desktop/ns-3.45
 ./ns3 build
 
 # Single P-EDCA simulation

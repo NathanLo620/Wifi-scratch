@@ -42,19 +42,19 @@ from multiprocessing import cpu_count as mp_cpu_count
 # ══════════════════════════════════════════════════════════════════════
 #  USER-CONFIGURABLE PARAMETERS
 # ══════════════════════════════════════════════════════════════════════
-N_STA_LIST      = list(range(2, 51, 2))               # 2, 4, 6, ..., 50
+N_STA_LIST      = list(range(5, 101, 5))               # 2, 4, 6, ..., 50
 PEDCA_RATIOS    = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]     # P-EDCA enable ratios
 DATA_RATE       = "1Mbps"                            # Fixed data rate
 SIM_TIME        = 10.0                                 # Simulation duration (s)
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
-MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.5))  # Keep CPU near saturation
+MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))  # Keep CPU near saturation
 N_RUNS          = 10                                    # Runs to average
 SIM_BINARY      = "scratch/pedca_verification_nsta.cc" # Single unified binary
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
 NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
-OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on")
+OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on_D13")
 
 # ── Force non-interactive backend ──
 import matplotlib
@@ -204,6 +204,8 @@ def parse_stats(stdout: str) -> dict:
     block = extract_stats_block(stdout)
     result = {
         "pedca_ratio": 0.0,
+        "channel_idle_ratio": 0.0,
+        "avg_pedca_tx_ratio": 0.0,
         "total_successes": 0,
         "total_failures": 0,
         "total_retransmissions": 0,
@@ -220,6 +222,12 @@ def parse_stats(stdout: str) -> dict:
         s = line.strip()
         if s.startswith("P-EDCA Ratio:"):
             try: result["pedca_ratio"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Channel Idle Time (AP):"):
+            try: result["channel_idle_ratio"] = float(s.split(":")[1].split("%")[0].strip())
+            except: pass
+        elif s.startswith("Avg P-EDCA Tx Ratio:"):
+            try: result["avg_pedca_tx_ratio"] = float(s.split(":")[1].strip())
             except: pass
         elif s.startswith("Total Successes:"):
             try: result["total_successes"] = float(s.split(":")[1].strip())
@@ -274,6 +282,8 @@ def average_stats(stats_list: list) -> dict:
 
     avg = {
         "pedca_ratio": stats_list[0].get("pedca_ratio", 0.0),
+        "channel_idle_ratio": sum(s.get("channel_idle_ratio", 0.0) for s in stats_list) / n,
+        "avg_pedca_tx_ratio": sum(s.get("avg_pedca_tx_ratio", 0.0) for s in stats_list) / n,
         "total_successes": sum(s["total_successes"] for s in stats_list) / n,
         "total_failures": sum(s["total_failures"] for s in stats_list) / n,
         "total_retransmissions": sum(s["total_retransmissions"] for s in stats_list) / n,
@@ -319,6 +329,8 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
     lines = []
     lines.append(f"=== WifiTxStatsHelper (MAC-layer) [Averaged over {n_runs} runs] ===")
     lines.append(f"P-EDCA Ratio: {avg['pedca_ratio']}")
+    lines.append(f"Channel Idle Time (AP): {avg.get('channel_idle_ratio', 0.0):.2f} %")
+    lines.append(f"Avg P-EDCA Tx Ratio: {avg.get('avg_pedca_tx_ratio', 0.0):.6g}")
     lines.append(f"Total Successes:       {avg['total_successes']:.1f}")
     lines.append(f"Total Failures:        {avg['total_failures']:.1f}")
     lines.append(f"Total Retransmissions: {avg['total_retransmissions']:.1f}")
@@ -554,13 +566,15 @@ def _compute_percentile_xlim(all_series: list, percentile: float = 0.95) -> floa
 
 def plot_combined(csv_dict: dict, out_path: Path, n_sta: int, data_rate: str,
                   ratios: list, n_runs: int = 1,
-                  fig_width: float = 14.0, fig_height: float = 10.0, dpi: int = 200):
+                  fig_width: float = 14.0, fig_height: float = 15.0, dpi: int = 200,
+                  stats_path: Path = None):
     """
-    Generate a 2-subplot figure:
+    Generate a 3-subplot figure:
       Top:    Zoomed PDF (clipped at 95th percentile to focus on the peak)
-      Bottom: CDF overlay (integral of the displayed PDF)
+      Middle: CDF overlay (integral of the displayed PDF)
+      Bottom: Channel Idle Time vs nSta
     """
-    fig, (ax_pdf, ax_cdf) = plt.subplots(2, 1, figsize=(fig_width, fig_height))
+    fig, (ax_pdf, ax_cdf, ax_idle) = plt.subplots(3, 1, figsize=(fig_width, fig_height))
 
     colors = get_ratio_colors(ratios)
 
@@ -670,6 +684,45 @@ def plot_combined(csv_dict: dict, out_path: Path, n_sta: int, data_rate: str,
     ax_cdf.grid(True, alpha=0.25, linestyle="--")
     ax_cdf.legend(loc="lower right", fontsize=8)
 
+    # ── Bottom subplot: Idle % (if stats_path is provided) ──
+    if stats_path and stats_path.exists():
+        idle_data = parse_stats_file_for_idle_ratio(stats_path, ratios)
+        has_idle_data = False
+        for ratio in ratios:
+            pts = idle_data.get(ratio, [])
+            if not pts:
+                continue
+            nsta_vals = [p[0] for p in pts]
+            idle_vals = [p[1] for p in pts]
+            color = colors[ratio]
+            label = f"P-EDCA {ratio:.0%}"
+            ax_idle.plot(nsta_vals, idle_vals, marker="o", markersize=4,
+                         linewidth=1.2, color=color, label=label)
+            
+            # Highlight current nSta
+            for x, y in pts:
+                if x == n_sta:
+                    ax_idle.plot(x, y, marker="*", markersize=12, color="red", markeredgecolor="black", zorder=10)
+                
+            has_idle_data = True
+        
+        if has_idle_data:
+            ax_idle.set_xlabel("Number of Stations (nSta)", fontsize=10)
+            ax_idle.set_ylabel("Channel Idle Time (%)", fontsize=11)
+            ax_idle.set_title(
+                f"Channel Idle Time vs nSta  —  (Red Star = Current nSta={n_sta})",
+                fontsize=12, fontweight="bold"
+            )
+            ax_idle.grid(True, alpha=0.3, linestyle="--")
+            ax_idle.legend(loc="upper right", fontsize=8)
+            all_nsta_idle = sorted(set(n for r in ratios for n, _ in idle_data.get(r, [])))
+            if all_nsta_idle:
+                if len(all_nsta_idle) > 15:
+                    ax_idle.set_xticks(all_nsta_idle[::2])
+                else:
+                    ax_idle.set_xticks(all_nsta_idle)
+            ax_idle.tick_params(axis="x", labelsize=8, rotation=45)
+
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(str(out_path), dpi=dpi)
@@ -771,6 +824,137 @@ def parse_stats_file_for_packet_loss(stats_path: Path, ratios: list) -> dict:
         result[r].sort(key=lambda x: x[0])
     return result
 
+def parse_stats_file_for_idle_ratio(stats_path: Path, ratios: list) -> dict:
+    """
+    Parse ratio_sweep_statistics_*.txt to extract Idle percentage
+    for each (nSta, ratio) pair.
+    Returns: {ratio: [(nSta, idle_pct), ...]}
+    """
+    result = {r: [] for r in ratios}
+    if not stats_path.exists():
+        return result
+
+    text = stats_path.read_text()
+    current_nsta = None
+    current_ratio = None
+
+    for line in text.splitlines():
+        s = line.strip()
+        m = re.match(r"nSta\s*=\s*(\d+)", s)
+        if m:
+            current_nsta = int(m.group(1))
+            current_ratio = None
+            continue
+        m = re.match(r"P-EDCA Ratio\s*=\s*(\d+)%", s)
+        if m:
+            pct = int(m.group(1))
+            current_ratio = pct / 100.0
+            continue
+        if s.startswith("Channel Idle Time (AP):"):
+            m2 = re.search(r"([\d.]+)\s*%", s)
+            if m2 and current_nsta is not None and current_ratio is not None:
+                idle_pct = float(m2.group(1))
+                if current_ratio in result:
+                    result[current_ratio].append((current_nsta, idle_pct))
+
+    for r in result:
+        result[r].sort(key=lambda x: x[0])
+    return result
+
+
+def parse_stats_file_for_pedca_tx_ratio(stats_path: Path, ratios: list) -> dict:
+    """
+    Parse ratio_sweep_statistics_*.txt to extract the Avg P-EDCA Tx Ratio
+    for each (nSta, ratio) pair.
+    """
+    result = {r: [] for r in ratios}
+    if not stats_path.exists():
+        return result
+
+    text = stats_path.read_text()
+    current_nsta = None
+    current_ratio = None
+
+    for line in text.splitlines():
+        s = line.strip()
+        m = re.match(r"nSta\s*=\s*(\d+)", s)
+        if m:
+            current_nsta = int(m.group(1))
+            current_ratio = None
+            continue
+        m = re.match(r"P-EDCA Ratio\s*=\s*(\d+)%", s)
+        if m:
+            pct = int(m.group(1))
+            current_ratio = pct / 100.0
+            continue
+        if s.startswith("Avg P-EDCA Tx Ratio:"):
+            try:
+                val = float(s.split("Ratio:")[1].strip())
+                if current_nsta is not None and current_ratio is not None:
+                    if current_ratio in result:
+                        result[current_ratio].append((current_nsta, val))
+            except:
+                pass
+
+    for r in result:
+        result[r].sort(key=lambda x: x[0])
+    return result
+
+
+def plot_pedca_tx_ratio_vs_nsta(stats_path: Path, out_path: Path,
+                                data_rate: str, ratios: list,
+                                n_runs: int = 1,
+                                fig_width: float = 12.0,
+                                fig_height: float = 6.0,
+                                dpi: int = 200):
+    """
+    Generate an Avg P-EDCA Tx Ratio vs nSta plot.
+    """
+    data = parse_stats_file_for_pedca_tx_ratio(stats_path, ratios)
+    colors = get_ratio_colors(ratios)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    has_data = False
+    for ratio in ratios:
+        pts = data.get(ratio, [])
+        if not pts:
+            continue
+        nsta_vals = [p[0] for p in pts]
+        loss_vals = [p[1] for p in pts]
+        label = f"P-EDCA {ratio:.0%}"
+        color = colors[ratio]
+        ax.plot(nsta_vals, loss_vals, marker="o", markersize=4,
+                linewidth=1.2, color=color, label=label)
+        has_data = True
+
+    if not has_data:
+        plt.close(fig)
+        return None
+
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+    ax.set_xlabel("Number of Stations (nSta)", fontsize=11)
+    ax.set_ylabel("Avg P-EDCA Tx Ratio", fontsize=11)
+    ax.set_title(
+        f"Avg P-EDCA Tx Ratio vs nSta  —  {data_rate}{runs_label}",
+        fontsize=13, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.legend(loc="upper left", fontsize=9)
+
+    all_nsta = sorted(set(n for r in ratios for n, _ in data.get(r, [])))
+    if len(all_nsta) > 15:
+        ax.set_xticks(all_nsta[::2])
+    else:
+        ax.set_xticks(all_nsta)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
 
 def plot_packet_loss_vs_nsta(stats_path: Path, out_path: Path,
                              data_rate: str, ratios: list,
@@ -836,9 +1020,9 @@ def _plot_single_nsta(args_tuple):
     Wrapper for plot_combined that can be used with ProcessPoolExecutor.
     Receives all arguments as a tuple.
     """
-    csv_paths, out_pdf, n_sta, data_rate, ratios, n_runs, fw, fh, dpi = args_tuple
+    csv_paths, out_pdf, n_sta, data_rate, ratios, n_runs, fw, fh, dpi, stats_path = args_tuple
     try:
-        plot_combined(csv_paths, out_pdf, n_sta, data_rate, ratios, n_runs, fw, fh, dpi)
+        plot_combined(csv_paths, out_pdf, n_sta, data_rate, ratios, n_runs, fw, fh, dpi, stats_path)
         return n_sta, True, out_pdf.name
     except Exception as e:
         return n_sta, False, str(e)
@@ -888,11 +1072,10 @@ def main():
     # ── Helper: parallel PDF/CDF plot generation ──
     plot_workers = max(1, mp_cpu_count() or 4)
 
-    def generate_plots_parallel(nsta_list_plot, csv_source=None):
+    def generate_plots_parallel(nsta_list_plot, stats_path_for_plot=None):
         """
         Generate per-nSta PDF/CDF plots in parallel using ThreadPoolExecutor.
         (ProcessPoolExecutor deadlocks with matplotlib's Agg backend on Linux fork.)
-        csv_source: if None, look up files on disk; otherwise a dict {nSta: {ratio: path}}.
         """
         plot_tasks = []
         for n_sta in nsta_list_plot:
@@ -905,7 +1088,7 @@ def main():
                 out_pdf = OUT_DIR / combined_plot_name(n_sta, data_rate)
                 plot_tasks.append(
                     (csv_paths, out_pdf, n_sta, data_rate, ratios, n_runs,
-                     args.fig_width, args.fig_height, args.dpi)
+                     args.fig_width, 15.0, args.dpi, stats_path_for_plot)
                 )
             else:
                 print(f"    ⚠ nSta={n_sta}: no CSVs, skipping plot")
@@ -939,13 +1122,14 @@ def main():
                 else:
                     print(f"  [plot-only] ✗ Missing: {p.name}")
 
+        stats_path = OUT_DIR / f"ratio_sweep_statistics_{data_rate}.txt"
+
         print(f"\n{'─'*60}")
-        print(f"  Generating PDF/CDF plots (parallel)...")
+        print(f"  Generating PDF/CDF/Idle plots (parallel)...")
         print(f"{'─'*60}")
-        generate_plots_parallel(nsta_list)
+        generate_plots_parallel(nsta_list, stats_path)
 
         # ── Packet loss vs nSta plot ──
-        stats_path = OUT_DIR / f"ratio_sweep_statistics_{data_rate}.txt"
         if stats_path.exists():
             print(f"\n{'─'*60}")
             print(f"  Generating Packet Loss vs nSta plot...")
@@ -959,6 +1143,22 @@ def main():
                 print(f"    ✔ {loss_pdf.name}")
             else:
                 print(f"    ⚠ No packet loss data found in {stats_path.name}")
+        
+        # ── P-EDCA Tx Ratio vs nSta plot ──
+        if stats_path.exists():
+            print(f"\n{'─'*60}")
+            print(f"  Generating P-EDCA Tx Ratio vs nSta plot...")
+            print(f"{'─'*60}")
+            ratio_pdf = OUT_DIR / f"vo_pedca_tx_ratio_vs_nSta_{data_rate}.pdf"
+            result = plot_pedca_tx_ratio_vs_nsta(
+                stats_path, ratio_pdf, data_rate, ratios, n_runs,
+                args.fig_width, args.fig_height, args.dpi
+            )
+            if result:
+                print(f"    ✔ {ratio_pdf.name}")
+            else:
+                print(f"    ⚠ No P-EDCA Tx Ratio data found in {stats_path.name}")
+
     else:
         # ── Parallel simulation mode (flat task pool) ──
         all_results = {}  # {nSta: {ratio: aggregated_result}}
@@ -1018,18 +1218,18 @@ def main():
 
             write_log(n_sta, data_rate, all_results[n_sta], n_runs, ratios)
 
-        # ── Generate per-nSta PDF/CDF plots (parallel) ──
-        print(f"\n{'─'*60}")
-        print(f"  Generating PDF/CDF plots (parallel)...")
-        print(f"{'─'*60}")
-        generate_plots_parallel(nsta_list)
-
         # ── Statistics comparison ──
         print(f"\n{'─'*60}")
         print(f"  Generating statistics comparison...")
         print(f"{'─'*60}")
         stats_path = write_comparison_stats(all_results, data_rate, n_runs, ratios)
         print(f"    ✔ {stats_path.name}  ({stats_path.stat().st_size:,} bytes)")
+
+        # ── Generate per-nSta PDF/CDF/Idle plots (parallel) ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating PDF/CDF/Idle plots (parallel)...")
+        print(f"{'─'*60}")
+        generate_plots_parallel(nsta_list, stats_path)
 
         # ── Packet loss vs nSta plot ──
         print(f"\n{'─'*60}")
@@ -1044,6 +1244,20 @@ def main():
             print(f"    ✔ {loss_pdf.name}")
         else:
             print(f"    ⚠ No packet loss data found")
+            
+        # ── P-EDCA Tx Ratio vs nSta plot ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating P-EDCA Tx Ratio vs nSta plot...")
+        print(f"{'─'*60}")
+        ratio_pdf = OUT_DIR / f"vo_pedca_tx_ratio_vs_nSta_{data_rate}.pdf"
+        result = plot_pedca_tx_ratio_vs_nsta(
+            stats_path, ratio_pdf, data_rate, ratios, n_runs,
+            args.fig_width, args.fig_height, args.dpi
+        )
+        if result:
+            print(f"    ✔ {ratio_pdf.name}")
+        else:
+            print(f"    ⚠ No P-EDCA Tx Ratio data found")
 
     elapsed_total = time.time() - t_total
 
@@ -1061,6 +1275,9 @@ def main():
     plot_loss = OUT_DIR / f"vo_packet_loss_vs_nSta_{data_rate}.pdf"
     if plot_loss.exists():
         print(f"    {plot_loss.name}  ({plot_loss.stat().st_size:,} bytes)")
+    plot_ratio = OUT_DIR / f"vo_pedca_tx_ratio_vs_nSta_{data_rate}.pdf"
+    if plot_ratio.exists():
+        print(f"    {plot_ratio.name}  ({plot_ratio.stat().st_size:,} bytes)")
     print(f"\n  Log files:")
     for f in sorted(OUT_DIR.glob(f"sim_log_*_{data_rate}.txt")):
         print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
