@@ -42,7 +42,7 @@ from multiprocessing import cpu_count as mp_cpu_count
 # ══════════════════════════════════════════════════════════════════════
 #  USER-CONFIGURABLE PARAMETERS
 # ══════════════════════════════════════════════════════════════════════
-N_STA_LIST      = list(range(5, 101, 5))               # 2, 4, 6, ..., 50
+N_STA_LIST      = list(range(2, 51, 1))               # 2, 4, 6, ..., 50
 PEDCA_RATIOS    = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]     # P-EDCA enable ratios
 DATA_RATE       = "1Mbps"                            # Fixed data rate
 SIM_TIME        = 10.0                                 # Simulation duration (s)
@@ -54,7 +54,7 @@ SIM_BINARY      = "scratch/pedca_verification_nsta.cc" # Single unified binary
 
 # Paths
 NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
-OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on_D13")
+OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on_D13_mod")
 
 # ── Force non-interactive backend ──
 import matplotlib
@@ -186,13 +186,13 @@ def extract_stats_block(stdout: str) -> str:
     start_idx = None
     end_idx = len(lines)
     for i, line in enumerate(lines):
-        if "WifiTxStatsHelper" in line and start_idx is None:
+        if "=== General Statistics ===" in line and start_idx is None:
             start_idx = i
         if start_idx is not None and "VO Delay PDF" in line:
             end_idx = i
             break
     if start_idx is None:
-        return "  (no WifiTxStatsHelper output found)\n"
+        return "  (no General Statistics output found)\n"
     block = lines[start_idx:end_idx]
     while block and not block[-1].strip():
         block.pop()
@@ -226,8 +226,8 @@ def parse_stats(stdout: str) -> dict:
         elif s.startswith("Channel Idle Time (AP):"):
             try: result["channel_idle_ratio"] = float(s.split(":")[1].split("%")[0].strip())
             except: pass
-        elif s.startswith("Avg P-EDCA Tx Ratio:"):
-            try: result["avg_pedca_tx_ratio"] = float(s.split(":")[1].strip())
+        elif s.startswith("P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx):"):
+            try: result["avg_pedca_tx_ratio"] = float(s.split(":")[1].split("%")[0].strip()) / 100.0
             except: pass
         elif s.startswith("Total Successes:"):
             try: result["total_successes"] = float(s.split(":")[1].strip())

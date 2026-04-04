@@ -1,8 +1,8 @@
 # Technical Specification: Prioritized EDCA (P-EDCA) Operational Mechanism  
-**Based on IEEE P82.11bn™/D1.1 (Sep 2025) — Clause 37.6 “Prioritized EDCA” and related definitions**  
-**Updated with Comment Resolution items #4555, #7657, #12651**  
+**Based on IEEE P802.11bn™/D1.3 (Mar 2026) — Clause 37.6 “Prioritized EDCA” and related definitions**  
+**Updated with Comment Resolution items CIDs 5780/5782/6457/11751/11757/10258 (terminology), 7112/11411/11759 (AIFSN condition), 7110/5763/7108/8652 (TXOP clarification), 5844 (EDCAF state preservation), 5788/6459 (optional path), 6564/11398/6562 (QSRC increment rule)**  
 **Document Type:** Implementable mechanism spec (standard-setter / simulator-developer grade)  
-**Version:** 1.1 (Mar 2026)
+**Version:** 1.3 (Apr 2026)
 
 ---
 
@@ -13,7 +13,7 @@ P-EDCA is an enhancement to EDCA that **reduces channel access delay for AC_VO t
 1) transmitting a **Defer Signal CTS (DS-CTS)** to protect a bounded contention interval via NAV, and  
 2) immediately performing a constrained EDCA-like contention (**P-EDCA contention**) where **only EDCAF[AC_VO] may contend**, and where a TXOP must be initiated with **RTS**.
 
-> **Non-goal (important):** DS-CTS does **not** reserve the medium for an entire payload TXOP by “Duration = TXOP length”. The DS-CTS Duration protects the **maximum P-EDCA contention duration** only.
+> **Non-goal (important):** DS-CTS does **not** reserve the medium for an entire payload TXOP by “Duration = TXOP length”. The DS-CTS Duration protects the **maximum P-EDCA protected duration** only.
 
 ---
 
@@ -29,10 +29,10 @@ P-EDCA is an enhancement to EDCA that **reduces channel access delay for AC_VO t
 
 ### 1.3 P-EDCA Specific Frames and Timing
 - **DS-CTS (Defer Signal CTS):** A CTS control frame transmitted by a P-EDCA STA to start P-EDCA contention.
-- **DSAIFS[AC_VO]:** A slot-boundary transmission timing used to send DS-CTS:
-  - `DSAIFS[AC_VO] = aSIFSTime + (AIFSN + DSr) × aSlotTime`
-  - `AIFSN = 2`
-  - `DSr` is uniformly random in `[0, CWds[AC_VO]]` **per DS-CTS transmission**.
+- **P-EDCA slot boundary:** The EDCA slot boundary computed with `AIFSN[AC_VO]` set to `2 + DSr`, where `DSr` is uniformly random in `[0, CWds[AC_VO]]` per DS-CTS transmission. This replaces the deprecated `DSAIFS[AC_VO]` terminology from D1.1.
+  - Equivalently: `aSIFSTime + (2 + DSr) × aSlotTime` from the last medium-busy-end event.
+
+> **Terminology note (CIDs 5780/5782/6457/11751/11757/10258):** D1.1 used the term `DSAIFS[AC_VO]` / `DSAIFSN`. D1.3 replaces these throughout with "P-EDCA slot boundary" / "EDCA slot boundary" using `AIFSN[AC] = 2`. All references to `DSAIFS` in this document are superseded.
 
 ### 1.4 P-EDCA Counters
 - **PSRC[AC_VO] (P-EDCA STA retry counter):**
@@ -87,21 +87,20 @@ The **P-EDCA Operation Parameters field** contains:
 ### 2.6 Default Parameter Set (Table 37-1)
 If the most recent AP mode tuple for P-EDCA does **not** carry Mode Specific Parameters for P-EDCA, the default parameters below apply.
 
-| AC    | P-EDCA CWmin | P-EDCA CWmax | P-EDCA AIFSN | P-EDCA contention duration | CWds | P-EDCA PSRC threshold | P-EDCA QSRC threshold |
-|------|--------------:|--------------:|-------------:|---------------------------:|-----:|----------------------:|----------------------:|
-| AC_VO| 7             | 7             | 2            | 97 µs                      | 0    | 1                     | 2                     |
+| AC    | P-EDCA CWmin | P-EDCA CWmax | P-EDCA AIFSN | P-EDCA protected duration                               | CWds | P-EDCA PSRC threshold | P-EDCA QSRC threshold |
+|------|--------------:|--------------:|-------------:|---------------------------------------------------------:|-----:|----------------------:|----------------------:|
+| AC_VO| 7             | 7             | 2            | 77 µs (5/6GHz band) <br> or 71 µs (2.4GHz band)          | 0    | 1                     | 2                     |
 
 **NOTE (normative rationale):**  
-The NAV set by the DS-CTS Duration protects the medium for the **maximum P-EDCA contention duration**:
-- `P-EDCA contention duration = aSIFSTime + (AIFSN + CWmax) × aSlotTime`
-- For default values: `97 µs = 16 µs + (2 + 7) × 9 µs`  
-**The value of P-EDCA contention duration is fixed and is not advertised by the AP.**
+The NAV set by the DS-CTS Duration protects the medium. The rationale is that the protection time plus the AP's AIFS must be greater than the maximum backoff duration for the P-EDCA STA:
+- `Duration + AIFS > 77 + 25 = 102 µs > aSIFSTime + (AIFSN + CWmax) * aSlotTime = 97 µs`  
+**The value of P-EDCA protected duration is fixed and is not advertised by the AP.**
 
 ---
 
 ## 3. Conditions to Start a P-EDCA Contention
 
-*(Updated per Comment Resolution #4555, #7657, #12651)*
+*(Updated per CIDs 5780/5782/6457, 7112/11411/11759, and ShortRetryLimit constraint)*
 
 A P-EDCA STA **may** start a P-EDCA contention if **all** of the following are satisfied:
 
@@ -113,6 +112,9 @@ A P-EDCA STA **may** start a P-EDCA contention if **all** of the following are s
 3) **Gate by counters:**
    - `QSRC[AC_VO]` is **equal to or greater than** `dot11PEDCARetryThreshold`, and
    - `PSRC[AC_VO]` is **less than** `dot11PEDCAConsecutiveAttempt`
+4) **AIFSN nonzero (CIDs 7112/11411/11759):**
+   - `AIFSN[AC_VO]` is set to a nonzero value.
+   - *Rationale:* If `AIFSN[AC_VO] = 0`, there is no slot boundary at which to place the DS-CTS; the P-EDCA slot boundary formula `aSIFSTime + (2 + DSr) × aSlotTime` requires at least AIFSN=2, so a zero value would make the procedure undefined. This condition is normative per D1.3.
 
 ### 3.1 ShortRetryLimit Constraint (Normative)
 
@@ -144,8 +146,16 @@ Before attempting to transmit DS-CTS to start a P-EDCA contention, the STA shall
 
 #### 4.1.1 Compute DS-CTS Transmission Opportunity
 - For each DS-CTS transmission attempt, select `DSr` uniformly in `[0, CWds[AC_VO]]`.
-- The DS-CTS transmission shall occur at the **DSAIFS[AC_VO] slot boundary** if CS determines the medium idle:
-  - `DSAIFS[AC_VO] = aSIFSTime + (2 + DSr) × aSlotTime`
+- The DS-CTS transmission shall occur at the **P-EDCA slot boundary** (formerly DSAIFS slot boundary) if CS determines the medium idle:
+  - P-EDCA slot boundary = `aSIFSTime + (2 + DSr) × aSlotTime` after the last medium-busy-end event.
+  - This is the EDCA slot boundary with `AIFSN[AC_VO]` set to `2 + DSr` (per CIDs 5780/5782/6457/11751/11757/10258).
+
+#### 4.1.1b DS-CTS Starts a TXOP for EDCAF[AC_VO] (CIDs 7110/5763/7108/8652)
+The DS-CTS frame is **initiated by EDCAF[AC_VO]** and represents the start of a TXOP for EDCAF[AC_VO]:
+- EDCAF[AC_VO] **wins the medium** at the P-EDCA slot boundary (after its backoff countdown reaches zero).
+- The DS-CTS acts as the initial protection frame for this TXOP.
+- Existing EDCA internal collision rules apply: if EDCAF[AC_VO] has an internal collision with another EDCAF on the same slot boundary, the resolution follows the standard EDCA internal collision procedure (the highest priority EDCAF wins). This is correct behavior since DS-CTS is initiated by EDCAF[AC_VO].
+- After the DS-CTS, EDCAF[AC_VO] immediately proceeds to Stage 2 (P-EDCA contention) within the same TXOP context.
 
 #### 4.1.2 DS-CTS PHY/PPDU Requirements (hard constraints)
 The DS-CTS frame shall be transmitted:
@@ -156,7 +166,7 @@ The DS-CTS frame shall be transmitted:
 #### 4.1.3 DS-CTS MAC Field Constraints (hard constraints)
 - **RA field:** shall be set to the fixed MAC address:  
   `00:0F:AC:47:43:00`
-- **Duration field:** shall be set to the value of **P-EDCA contention duration** in Table 37-1.
+- **Duration field:** shall be set to the value of **P-EDCA protected duration** in Table 37-1.
 
 > **Operational meaning:** DS-CTS sets NAV at other STAs to protect only the bounded contention window for P-EDCA contention (not the full subsequent payload exchange).
 
@@ -171,6 +181,7 @@ The P-EDCA contention shall follow the random backoff procedure for obtaining an
 1) **Single contender EDCAF:**
    - Only **EDCAF[AC_VO]** is allowed to contend during P-EDCA contention.
    - EDCAF[AC_VI], EDCAF[AC_BE], EDCAF[AC_BK] operations are **suspended**.
+   - **(CID 5844 — EDCAF state preservation, normative):** The suspended EDCAFs shall preserve all their EDCA state unchanged: backoff counter value, `CW[AC]`, `CWmin[AC]`, `CWmax[AC]`, and `QSRC[AC]`. These shall not be modified during suspension and shall resume exactly from their prior state when P-EDCA contention ends.
 
 2) **Parameter initialization for EDCAF[AC_VO]:**
    - EDCAF[AC_VO] shall initialize:
@@ -182,6 +193,13 @@ The P-EDCA contention shall follow the random backoff procedure for obtaining an
 3) **Backoff counter selection:**
    - EDCAF[AC_VO] shall set backoff counter to an integer drawn uniformly from:
      - `[0, CW[AC_VO]]`
+
+#### 4.2.3 NAV Protection Limit (77 µs)
+- The DS-CTS frame sets the NAV at surrounding STAs (including the AP and legacy STAs) for exactly the **P-EDCA protected duration** (fixed at 77 µs for 5/6GHz or 71 µs for 2.4GHz). Although the maximum backoff time for a P-EDCA STA can reach 97 µs, since other legacy STAs must wait for an AIFS (at least 25 µs) after the NAV expires, this 77 µs NAV actually creates an interference-free window of 77 + 25 = 102 µs for P-EDCA. This is sufficient to cover the worst-case 97 µs backoff countdown.
+- If the P-EDCA STA's Stage 2 backoff countdown takes longer than the protected duration (e.g., due to a large backoff value drawn, or the medium becoming busy and suspending the countdown):
+  - The STA **shall NOT abort** its Stage 2 backoff countdown.
+  - The STA **continues** to decrement its backoff counter and will still transmit its RTS once the counter reaches zero.
+  - However, because the NAV set by DS-CTS has expired, legacy STAs or the AP may begin their own contention and potentially transmit, leaving the P-EDCA STA unprotected from external collisions during the remainder of its backoff.
 
 ### 4.3 Step C — Initiate TXOP (Mandatory RTS as Initial Frame)
 A P-EDCA STA that initiates a TXOP during P-EDCA contention shall transmit an **RTS** frame as the **initial frame** in the TXOP.
@@ -201,16 +219,28 @@ If a P-EDCA STA successfully delivered one or more pending MPDUs in a TXOP obtai
 3) EDCAF[AC_VI], EDCAF[AC_BE], EDCAF[AC_BK] operations are resumed.
 4) `CW[AC_VO] := CWmin[AC_VO]`
 
-### 5.2 Retry Case: Participated But No TXOP, or RTS Sent But No CTS Received
+### 5.2 Optional Continuation Path: STA Chooses Not to Continue P-EDCA (CIDs 5788/6459)
+Even when the P-EDCA start conditions are satisfied and `PSRC[AC_VO] < dot11PEDCAConsecutiveAttempt`, the STA has an **optional path**: it may choose **not** to initiate another P-EDCA contention (i.e., not send DS-CTS again).
+
+If the STA takes this optional path:
+1) EDCAF[AC_VO] shall restore `AIFSN, CWmin, CWmax` from `dot11EDCATable`.
+2) EDCAF[AC_VI], EDCAF[AC_BE], EDCAF[AC_BK] operations are resumed (with their preserved state).
+3) The STA returns to standard EDCA operation.
+
+> **Note:** This path is provided to allow implementation flexibility (e.g., if the STA determines P-EDCA is unlikely to succeed). The normative behavior for retry is described in Section 5.3.
+
+### 5.3 Retry Case: Participated But No TXOP, or RTS Sent But No CTS Received
 If the STA:
 - participated in P-EDCA contention but did not initiate a TXOP, **or**
 - initiated a TXOP but did not receive CTS in response to RTS,
 
-then the STA may start another P-EDCA contention by sending DS-CTS again at a DSAIFS[AC_VO] slot boundary, when CS indicates medium idle, **for up to dot11PEDCAConsecutiveAttempt**.
+then the STA may start another P-EDCA contention by sending DS-CTS again at a **P-EDCA slot boundary** (EDCA slot boundary with `AIFSN[AC_VO] = 2 + DSr`), when CS indicates medium idle, **for up to dot11PEDCAConsecutiveAttempt**.
 
 > Remember: `PSRC[AC_VO]` increments on each DS-CTS transmission.
 
-### 5.3 Exhaustion Case: PSRC Reaches dot11PEDCAConsecutiveAttempt
+> **NOTE (CIDs 6564/11398/6562 — QSRC increment rule, normative):** `QSRC[AC_VO]` is incremented only when an RTS frame was sent but no CTS was received (i.e., a TXOP was initiated but failed). If the STA participated in P-EDCA contention but did **not** initiate a TXOP (i.e., no RTS was sent), `QSRC[AC_VO]` remains unchanged. This is consistent with the baseline EDCA backoff procedure where QSRC increments only on a transmission failure, not on a failed contention attempt.
+
+### 5.4 Exhaustion Case: PSRC Reaches dot11PEDCAConsecutiveAttempt
 If `PSRC[AC_VO]` reaches `dot11PEDCAConsecutiveAttempt`:
 
 1) The STA shall **not attempt** to start P-EDCA contention until:
@@ -220,7 +250,7 @@ If `PSRC[AC_VO]` reaches `dot11PEDCAConsecutiveAttempt`:
    - `AIFSN, CWmin, CWmax := dot11EDCATable` (AP uses dot11QAPEDCATable)
 3) EDCAF[AC_VI], EDCAF[AC_BE], EDCAF[AC_BK] operations are resumed.
 4) `CW[AC_VO]` shall be set to:
-   - `CW[AC_VO] = min( CWmax[AC_VO], 2^(QSRC[AC]) × (CWmin[AC_VO] + 1) - 1 )`
+   - `CW[AC_VO] = min( CWmax[AC_VO], 2^(QSRC[AC_VO]) × (CWmin[AC_VO] + 1) - 1 )`
    - (per EDCA backoff procedure reference)
 
 ---
@@ -231,7 +261,7 @@ If `PSRC[AC_VO]` reaches `dot11PEDCAConsecutiveAttempt`:
 - **S0: EDCA_NORMAL**
   - Standard EDCA across ACs.
 - **S1: DS_CTS_ATTEMPT**
-  - Evaluate start conditions; apply deferral rules; wait to DSAIFS slot boundary; send DS-CTS.
+  - Evaluate start conditions (including AIFSN[AC_VO] nonzero); apply deferral rules; wait to P-EDCA slot boundary (`aSIFSTime + (2+DSr)×aSlotTime`); send DS-CTS (starts TXOP for EDCAF[AC_VO]).
 - **S2: PEDCA_CONTENTION**
   - Immediately after DS-CTS; suspend non-VO EDCAFs; run EDCA TXOP obtain procedure for AC_VO with P-EDCA parameters.
 - **S3: TXOP_INIT_RTS**
@@ -240,11 +270,12 @@ If `PSRC[AC_VO]` reaches `dot11PEDCAConsecutiveAttempt`:
   - On success or on PSRC exhaustion, restore EDCA parameters and resume other ACs.
 
 ### 6.2 Required Transitions
-- S0 → S1: if start conditions satisfied.
-- S1 → S2: after DS-CTS transmitted.
+- S0 → S1: if start conditions satisfied (including AIFSN[AC_VO] nonzero per CIDs 7112/11411/11759).
+- S1 → S2: after DS-CTS transmitted (TXOP started for EDCAF[AC_VO] per CIDs 7110/5763/7108/8652).
 - S2 → S3: if TXOP obtained during P-EDCA contention.
-- S2 → S1: if contention ended without TXOP (within allowed consecutive attempts).
-- S3 → S1: if RTS sent but CTS not received (within allowed consecutive attempts).
+- S2 → S1: if contention ended without TXOP (within allowed consecutive attempts); suspended EDCAF state preserved (per CID 5844).
+- S2 → S4: **(optional, per CIDs 5788/6459)** STA chooses not to retry P-EDCA even though conditions are met.
+- S3 → S1: if RTS sent but CTS not received (within allowed consecutive attempts); QSRC incremented (per CIDs 6564/11398/6562).
 - S3 → S4: if MPDU(s) successfully delivered in the TXOP.
 - Any → S4: if PSRC reaches dot11PEDCAConsecutiveAttempt.
 
@@ -267,11 +298,11 @@ function try_start_pedca():
 
   # --- DS-CTS attempt ---
   DSr = uniform_int(0, CWds[VO])     # per DS-CTS transmission
-  wait_until_DSAIFS_slot_boundary( aSIFSTime + (2 + DSr)*aSlotTime )
+  wait_until_PEDCA_slot_boundary( aSIFSTime + (2 + DSr)*aSlotTime )  # P-EDCA slot boundary (D1.3)
   if medium_idle_by_CS():
       transmit_DS_CTS_nonHT_6Mbps_scrambler_seed32(
           RA = 00:0F:AC:47:43:00,
-          Duration = PEDCA_CONTENTION_DURATION   # from Table 37-1 default or updated set
+          Duration = PEDCA_PROTECTED_DURATION    # from Table 37-1 default or updated set
       )
       PSRC[VO] += 1
   else:
@@ -302,12 +333,18 @@ function try_start_pedca():
       pass
 
   # either: no TXOP obtained OR RTS but no CTS OR TXOP failed
+  # NOTE (CIDs 6564/11398/6562): QSRC incremented only if RTS was sent but no CTS received.
+  # If no TXOP was initiated (no RTS sent), QSRC remains unchanged.
+
   if PSRC[VO] < dot11PEDCAConsecutiveAttempt:
-      resume_all_EDCAFs()   # before next attempt, unless spec keeps suspended; conservative restore
+      # Do NOT resume_all_EDCAFs() here. Other ACs remain suspended (state preserved, CID 5844).
+      # Optional path (CIDs 5788/6459): STA may choose to exit P-EDCA even here:
+      #   if sta_opts_out_of_retry():
+      #       restore_EDCA_params(); resume_all_EDCAFs(); return EDCA_NORMAL
       return try_start_pedca_again_when_medium_idle()
   else:
       # exhaustion behavior
       restore_EDCA_params_from_dot11EDCATable()
       resume_all_EDCAFs()
-      CW[VO] = min(CWmax[VO], 2^(QSRC[AC])*(CWmin[VO]+1) - 1)
+      CW[VO] = min(CWmax[VO], 2^(QSRC[VO])*(CWmin[VO]+1) - 1)
       return EDCA_NORMAL

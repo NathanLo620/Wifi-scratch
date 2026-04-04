@@ -2,412 +2,830 @@ nohup: ignoring input
 
 ╔══════════════════════════════════════════════════════════╗
 ║  P-EDCA Ratio Sweep (Parallel, Multi-Run Averaging)    ║
-║  nSta = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50]
+║  nSta = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
 ║  ratios = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-║  dataRate = 0.5Mbps    simTime = 10.0s
-║  runs = 10    workers = 16.0
+║  dataRate = 1Mbps    simTime = 10.0s
+║  runs = 10    workers = 20
 ║  binary = scratch/pedca_verification_nsta.cc
 ╚══════════════════════════════════════════════════════════╝
 
-  Launching 25 nSta groups × 6 ratios × 10 runs = 1500 simulations
-  (16.0 nSta groups in parallel)
+  Launching 49 nSta × 6 ratios × 10 runs = 2940 simulations
+  (20 concurrent simulations)
 
-  ✔ nSta= 2  ratio=0%  9/10 runs OK  elapsed=17.1s
-  ✔ nSta= 2  ratio=20%  10/10 runs OK  elapsed=5.3s
-  ✔ nSta= 2  ratio=40%  10/10 runs OK  elapsed=5.7s
-  ✔ nSta= 2  ratio=60%  10/10 runs OK  elapsed=5.8s
-  ✔ nSta= 2  ratio=80%  10/10 runs OK  elapsed=5.9s
-  ✔ nSta= 2  ratio=100%  10/10 runs OK  elapsed=6.1s
-  ✔ nSta= 4  ratio=0%  6/10 runs OK  elapsed=19.4s
-  ✔ nSta= 4  ratio=20%  10/10 runs OK  elapsed=12.4s
-  ✔ nSta= 4  ratio=40%  10/10 runs OK  elapsed=12.3s
-  ✔ nSta= 4  ratio=60%  10/10 runs OK  elapsed=15.1s
-  ✔ nSta= 4  ratio=80%  10/10 runs OK  elapsed=11.9s
-  ✔ nSta= 4  ratio=100%  10/10 runs OK  elapsed=12.6s
-  ✔ nSta= 6  ratio=0%  8/10 runs OK  elapsed=35.8s
-  ✔ nSta= 6  ratio=20%  10/10 runs OK  elapsed=23.2s
-  ✔ nSta= 6  ratio=40%  10/10 runs OK  elapsed=23.5s
-  ✔ nSta= 6  ratio=60%  10/10 runs OK  elapsed=27.0s
-  ✔ nSta= 6  ratio=80%  10/10 runs OK  elapsed=28.2s
-  ✔ nSta= 6  ratio=100%  10/10 runs OK  elapsed=30.6s
-  ✔ nSta= 8  ratio=0%  8/10 runs OK  elapsed=51.7s
-  ✔ nSta= 8  ratio=20%  10/10 runs OK  elapsed=43.1s
-  ✔ nSta= 8  ratio=40%  10/10 runs OK  elapsed=43.5s
-  ✔ nSta= 8  ratio=60%  10/10 runs OK  elapsed=45.4s
-  ✔ nSta= 8  ratio=80%  10/10 runs OK  elapsed=41.2s
-  ✔ nSta= 8  ratio=100%  10/10 runs OK  elapsed=49.4s
-  ✔ nSta=10  ratio=0%  10/10 runs OK  elapsed=70.2s
-  ✔ nSta=10  ratio=20%  10/10 runs OK  elapsed=54.3s
-  ✔ nSta=10  ratio=40%  10/10 runs OK  elapsed=68.4s
-  ✔ nSta=10  ratio=60%  10/10 runs OK  elapsed=60.3s
-  ✔ nSta=10  ratio=80%  10/10 runs OK  elapsed=63.3s
-  ✔ nSta=10  ratio=100%  10/10 runs OK  elapsed=55.7s
-  ✔ nSta=12  ratio=0%  5/10 runs OK  elapsed=53.8s
-  ✔ nSta=12  ratio=20%  10/10 runs OK  elapsed=88.8s
-  ✔ nSta=12  ratio=40%  10/10 runs OK  elapsed=79.4s
-  ✔ nSta=12  ratio=60%  10/10 runs OK  elapsed=88.7s
-  ✔ nSta=12  ratio=80%  10/10 runs OK  elapsed=79.4s
-  ✔ nSta=12  ratio=100%  10/10 runs OK  elapsed=89.0s
-  ✔ nSta=14  ratio=0%  6/10 runs OK  elapsed=72.3s
-  ✔ nSta=14  ratio=20%  10/10 runs OK  elapsed=105.5s
-  ✔ nSta=14  ratio=40%  10/10 runs OK  elapsed=130.6s
-  ✔ nSta=14  ratio=60%  10/10 runs OK  elapsed=119.4s
-  ✔ nSta=14  ratio=80%  10/10 runs OK  elapsed=117.7s
-  ✔ nSta=14  ratio=100%  10/10 runs OK  elapsed=142.3s
-  ✔ nSta=16  ratio=0%  7/10 runs OK  elapsed=114.9s
-  ✔ nSta=16  ratio=20%  10/10 runs OK  elapsed=176.8s
-  ✔ nSta=16  ratio=40%  10/10 runs OK  elapsed=174.1s
-  ✔ nSta=16  ratio=60%  10/10 runs OK  elapsed=145.0s
-  ✔ nSta=16  ratio=80%  10/10 runs OK  elapsed=151.2s
-  ✔ nSta=16  ratio=100%  10/10 runs OK  elapsed=136.7s
-  ✔ nSta=18  ratio=0%  9/10 runs OK  elapsed=210.0s
-  ✔ nSta=18  ratio=20%  10/10 runs OK  elapsed=187.8s
-  ✔ nSta=18  ratio=40%  10/10 runs OK  elapsed=187.0s
-  ✔ nSta=18  ratio=60%  10/10 runs OK  elapsed=203.1s
-  ✔ nSta=18  ratio=80%  10/10 runs OK  elapsed=223.0s
-  ✔ nSta=18  ratio=100%  10/10 runs OK  elapsed=202.1s
-  ✔ nSta=20  ratio=0%  6/10 runs OK  elapsed=145.7s
-  ✔ nSta=20  ratio=20%  10/10 runs OK  elapsed=266.0s
-  ✔ nSta=20  ratio=40%  10/10 runs OK  elapsed=221.5s
-  ✔ nSta=20  ratio=60%  10/10 runs OK  elapsed=230.5s
-  ✔ nSta=20  ratio=80%  10/10 runs OK  elapsed=255.3s
-  ✔ nSta=20  ratio=100%  10/10 runs OK  elapsed=216.4s
-  ✔ nSta=22  ratio=0%  7/10 runs OK  elapsed=188.6s
-  ✔ nSta=22  ratio=20%  10/10 runs OK  elapsed=363.5s
-  ✔ nSta=22  ratio=40%  10/10 runs OK  elapsed=340.5s
-  ✔ nSta=22  ratio=60%  10/10 runs OK  elapsed=338.4s
-  ✔ nSta=22  ratio=80%  10/10 runs OK  elapsed=232.6s
-  ✔ nSta=22  ratio=100%  10/10 runs OK  elapsed=291.4s
-  ✔ nSta=24  ratio=0%  8/10 runs OK  elapsed=420.0s
-  ✔ nSta=24  ratio=20%  10/10 runs OK  elapsed=376.5s
-  ✔ nSta=24  ratio=40%  10/10 runs OK  elapsed=365.4s
-  ✔ nSta=24  ratio=60%  10/10 runs OK  elapsed=315.2s
-  ✔ nSta=24  ratio=80%  10/10 runs OK  elapsed=306.2s
-  ✔ nSta=24  ratio=100%  10/10 runs OK  elapsed=349.8s
-  ✔ nSta=26  ratio=0%  7/10 runs OK  elapsed=330.7s
-  ✔ nSta=26  ratio=20%  10/10 runs OK  elapsed=528.1s
-  ✔ nSta=26  ratio=40%  10/10 runs OK  elapsed=369.4s
-  ✔ nSta=26  ratio=60%  10/10 runs OK  elapsed=362.7s
-  ✔ nSta=26  ratio=80%  10/10 runs OK  elapsed=503.6s
-  ✔ nSta=26  ratio=100%  10/10 runs OK  elapsed=466.0s
-  ✔ nSta=28  ratio=0%  6/10 runs OK  elapsed=402.4s
-  ✔ nSta=28  ratio=20%  10/10 runs OK  elapsed=579.0s
-  ✔ nSta=28  ratio=40%  10/10 runs OK  elapsed=556.7s
-  ✔ nSta=28  ratio=60%  10/10 runs OK  elapsed=534.7s
-  ✔ nSta=28  ratio=80%  10/10 runs OK  elapsed=417.8s
-  ✔ nSta=28  ratio=100%  10/10 runs OK  elapsed=518.4s
-  ✔ nSta=30  ratio=0%  9/10 runs OK  elapsed=715.6s
-  ✔ nSta=30  ratio=20%  10/10 runs OK  elapsed=689.6s
-  ✔ nSta=30  ratio=40%  10/10 runs OK  elapsed=731.9s
-  ✔ nSta=30  ratio=60%  10/10 runs OK  elapsed=462.1s
-  ✔ nSta=30  ratio=80%  10/10 runs OK  elapsed=527.4s
-  ✔ nSta=30  ratio=100%  10/10 runs OK  elapsed=430.7s
-  ✔ nSta=32  ratio=0%  6/10 runs OK  elapsed=472.8s
-  ✔ nSta=32  ratio=20%  10/10 runs OK  elapsed=727.3s
-  ✔ nSta=32  ratio=40%  10/10 runs OK  elapsed=691.0s
-  ✔ nSta=32  ratio=60%  10/10 runs OK  elapsed=695.2s
-  ✔ nSta=32  ratio=80%  10/10 runs OK  elapsed=657.5s
-  ✔ nSta=32  ratio=100%  10/10 runs OK  elapsed=581.6s
-  ✔ nSta=34  ratio=0%  10/10 runs OK  elapsed=900.7s
-  ✔ nSta=34  ratio=20%  10/10 runs OK  elapsed=823.7s
-  ✔ nSta=34  ratio=40%  10/10 runs OK  elapsed=647.3s
-  ✔ nSta=34  ratio=60%  10/10 runs OK  elapsed=660.8s
-  ✔ nSta=34  ratio=80%  10/10 runs OK  elapsed=652.4s
-  ✔ nSta=34  ratio=100%  10/10 runs OK  elapsed=697.8s
-  ✔ nSta=36  ratio=0%  10/10 runs OK  elapsed=1178.7s
-  ✔ nSta=36  ratio=20%  10/10 runs OK  elapsed=909.2s
-  ✔ nSta=36  ratio=40%  10/10 runs OK  elapsed=894.4s
-  ✔ nSta=36  ratio=60%  10/10 runs OK  elapsed=832.9s
-  ✔ nSta=36  ratio=80%  10/10 runs OK  elapsed=717.6s
-  ✔ nSta=36  ratio=100%  10/10 runs OK  elapsed=669.3s
-  ✔ nSta=38  ratio=0%  10/10 runs OK  elapsed=1307.3s
-  ✔ nSta=38  ratio=20%  10/10 runs OK  elapsed=1046.3s
-  ✔ nSta=38  ratio=40%  10/10 runs OK  elapsed=880.2s
-  ✔ nSta=38  ratio=60%  10/10 runs OK  elapsed=835.8s
-  ✔ nSta=38  ratio=80%  10/10 runs OK  elapsed=763.9s
-  ✔ nSta=38  ratio=100%  10/10 runs OK  elapsed=688.5s
-  ✔ nSta=42  ratio=0%  10/10 runs OK  elapsed=1188.4s
-  ✔ nSta=42  ratio=20%  10/10 runs OK  elapsed=912.1s
-  ✔ nSta=42  ratio=40%  10/10 runs OK  elapsed=983.3s
-  ✔ nSta=42  ratio=60%  10/10 runs OK  elapsed=838.5s
-  ✔ nSta=42  ratio=80%  10/10 runs OK  elapsed=774.4s
-  ✔ nSta=42  ratio=100%  10/10 runs OK  elapsed=740.7s
-  ✔ nSta=40  ratio=0%  10/10 runs OK  elapsed=1342.8s
-  ✔ nSta=40  ratio=20%  10/10 runs OK  elapsed=1032.7s
-  ✔ nSta=40  ratio=40%  10/10 runs OK  elapsed=950.2s
-  ✔ nSta=40  ratio=60%  10/10 runs OK  elapsed=788.9s
-  ✔ nSta=40  ratio=80%  10/10 runs OK  elapsed=738.4s
-  ✔ nSta=40  ratio=100%  10/10 runs OK  elapsed=712.0s
-  ✔ nSta=44  ratio=0%  10/10 runs OK  elapsed=1486.8s
-  ✔ nSta=44  ratio=20%  10/10 runs OK  elapsed=1092.0s
-  ✔ nSta=44  ratio=40%  10/10 runs OK  elapsed=860.4s
-  ✔ nSta=44  ratio=60%  10/10 runs OK  elapsed=827.3s
-  ✔ nSta=44  ratio=80%  10/10 runs OK  elapsed=792.2s
-  ✔ nSta=44  ratio=100%  10/10 runs OK  elapsed=711.8s
-  ✔ nSta=46  ratio=0%  10/10 runs OK  elapsed=1295.6s
-  ✔ nSta=46  ratio=20%  10/10 runs OK  elapsed=995.5s
-  ✔ nSta=46  ratio=40%  10/10 runs OK  elapsed=1031.5s
-  ✔ nSta=46  ratio=60%  10/10 runs OK  elapsed=849.3s
-  ✔ nSta=46  ratio=80%  10/10 runs OK  elapsed=822.6s
-  ✔ nSta=46  ratio=100%  10/10 runs OK  elapsed=718.8s
-  ✔ nSta=48  ratio=0%  10/10 runs OK  elapsed=1390.8s
-  ✔ nSta=48  ratio=20%  10/10 runs OK  elapsed=1149.2s
-  ✔ nSta=48  ratio=40%  10/10 runs OK  elapsed=905.9s
-  ✔ nSta=48  ratio=60%  10/10 runs OK  elapsed=866.6s
-  ✔ nSta=48  ratio=80%  10/10 runs OK  elapsed=808.1s
-  ✔ nSta=48  ratio=100%  10/10 runs OK  elapsed=699.5s
-  ✔ nSta=50  ratio=0%  10/10 runs OK  elapsed=1399.7s
-  ✔ nSta=50  ratio=20%  10/10 runs OK  elapsed=1132.5s
-  ✔ nSta=50  ratio=40%  10/10 runs OK  elapsed=962.2s
-  ✔ nSta=50  ratio=60%  10/10 runs OK  elapsed=884.7s
-  ✔ nSta=50  ratio=80%  10/10 runs OK  elapsed=778.3s
-  ✔ nSta=50  ratio=100%  10/10 runs OK  elapsed=686.4s
+  [73/2940] ✔ nSta= 3 ratio=0% run=2 5.4s
+  [146/2940] ✔ nSta= 4 ratio=40% run=9 6.0s
+  [219/2940] ✔ nSta= 5 ratio=80% run=5 8.3s
+  [292/2940] ✔ nSta= 6 ratio=80% run=1 19.9s
+  [365/2940] ✔ nSta= 8 ratio=0% run=3 22.7s
+  [438/2940] ✔ nSta= 9 ratio=40% run=3 22.1s
+  [511/2940] ✔ nSta=10 ratio=40% run=7 39.5s
+  [584/2940] ✔ nSta=11 ratio=80% run=5 40.3s
+  [657/2940] ✔ nSta=13 ratio=0% run=0 47.4s
+  [730/2940] ✔ nSta=14 ratio=20% run=2 62.1s
+  [803/2940] ✔ nSta=15 ratio=20% run=4 111.9s
+  [876/2940] ✔ nSta=16 ratio=60% run=9 76.0s
+  [949/2940] ✔ nSta=17 ratio=80% run=3 124.6s
+  [1022/2940] ✔ nSta=18 ratio=100% run=8 118.5s
+  [1095/2940] ✔ nSta=20 ratio=20% run=5 124.9s
+  [1168/2940] ✔ nSta=21 ratio=40% run=5 142.2s
+  [1241/2940] ✔ nSta=22 ratio=60% run=9 131.2s
+  [1314/2940] ✔ nSta=23 ratio=100% run=4 129.1s
+  [1387/2940] ✔ nSta=24 ratio=100% run=5 232.8s
+  [1460/2940] ✔ nSta=26 ratio=40% run=3 126.8s
+  [1533/2940] ✔ nSta=27 ratio=60% run=8 121.6s
+  [1606/2940] ✔ nSta=28 ratio=80% run=9 120.0s
+  [1679/2940] ✔ nSta=29 ratio=100% run=9 156.1s
+  [1752/2940] ✔ nSta=31 ratio=20% run=4 147.0s
+  [1825/2940] ✔ nSta=32 ratio=40% run=5 232.6s
+  [1898/2940] ✔ nSta=33 ratio=60% run=9 176.4s
+  [1971/2940] ✔ nSta=34 ratio=80% run=3 255.2s
+  [2044/2940] ✔ nSta=36 ratio=0% run=4 209.8s
+  [2117/2940] ✔ nSta=37 ratio=20% run=2 241.9s
+  [2190/2940] ✔ nSta=38 ratio=60% run=3 197.0s
+  [2263/2940] ✔ nSta=39 ratio=80% run=2 199.8s
+  [2336/2940] ✔ nSta=40 ratio=100% run=6 217.1s
+  [2409/2940] ✔ nSta=42 ratio=20% run=2 191.9s
+  [2482/2940] ✔ nSta=43 ratio=20% run=6 304.5s
+  [2555/2940] ✔ nSta=44 ratio=60% run=7 220.2s
+  [2628/2940] ✔ nSta=45 ratio=80% run=4 255.0s
+  [2699/2940] ✗ nSta=47 ratio=0% run=9 115.4s
+  [2701/2940] ✔ nSta=47 ratio=0% run=3 216.9s
+  [2774/2940] ✔ nSta=48 ratio=20% run=9 225.4s
+  [2847/2940] ✔ nSta=49 ratio=40% run=9 250.0s
+  [2920/2940] ✔ nSta=50 ratio=40% run=8 394.5s
 
 ────────────────────────────────────────────────────────────
-  Generating plots...
+  Aggregating results...
 ────────────────────────────────────────────────────────────
-    ✔ vo_delay_probability_nSta2_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta4_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta6_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta8_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta10_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta12_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta14_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta16_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta18_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta20_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta22_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta24_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta26_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta28_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta30_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta32_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta34_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta36_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta38_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta40_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta42_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta44_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta46_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta48_0.5Mbps.pdf
-    ✔ vo_delay_probability_nSta50_0.5Mbps.pdf
+  ✔ nSta= 2  ratio=0%  10/10 runs OK  elapsed=21.6s
+  ✔ nSta= 2  ratio=20%  10/10 runs OK  elapsed=25.6s
+  ✔ nSta= 2  ratio=40%  10/10 runs OK  elapsed=21.5s
+  ✔ nSta= 2  ratio=60%  10/10 runs OK  elapsed=23.8s
+  ✔ nSta= 2  ratio=80%  10/10 runs OK  elapsed=22.1s
+  ✔ nSta= 2  ratio=100%  10/10 runs OK  elapsed=24.1s
+  ✔ nSta= 3  ratio=0%  10/10 runs OK  elapsed=43.7s
+  ✔ nSta= 3  ratio=20%  10/10 runs OK  elapsed=41.8s
+  ✔ nSta= 3  ratio=40%  10/10 runs OK  elapsed=41.5s
+  ✔ nSta= 3  ratio=60%  10/10 runs OK  elapsed=42.2s
+  ✔ nSta= 3  ratio=80%  10/10 runs OK  elapsed=41.6s
+  ✔ nSta= 3  ratio=100%  10/10 runs OK  elapsed=40.5s
+  ✔ nSta= 4  ratio=0%  10/10 runs OK  elapsed=71.2s
+  ✔ nSta= 4  ratio=20%  10/10 runs OK  elapsed=60.6s
+  ✔ nSta= 4  ratio=40%  10/10 runs OK  elapsed=66.3s
+  ✔ nSta= 4  ratio=60%  10/10 runs OK  elapsed=60.8s
+  ✔ nSta= 4  ratio=80%  10/10 runs OK  elapsed=66.2s
+  ✔ nSta= 4  ratio=100%  10/10 runs OK  elapsed=69.4s
+  ✔ nSta= 5  ratio=0%  10/10 runs OK  elapsed=101.5s
+  ✔ nSta= 5  ratio=20%  10/10 runs OK  elapsed=96.3s
+  ✔ nSta= 5  ratio=40%  10/10 runs OK  elapsed=80.8s
+  ✔ nSta= 5  ratio=60%  10/10 runs OK  elapsed=124.4s
+  ✔ nSta= 5  ratio=80%  10/10 runs OK  elapsed=85.7s
+  ✔ nSta= 5  ratio=100%  10/10 runs OK  elapsed=92.1s
+  ✔ nSta= 6  ratio=0%  10/10 runs OK  elapsed=149.4s
+  ✔ nSta= 6  ratio=20%  10/10 runs OK  elapsed=121.6s
+  ✔ nSta= 6  ratio=40%  10/10 runs OK  elapsed=134.6s
+  ✔ nSta= 6  ratio=60%  10/10 runs OK  elapsed=147.5s
+  ✔ nSta= 6  ratio=80%  10/10 runs OK  elapsed=136.4s
+  ✔ nSta= 6  ratio=100%  10/10 runs OK  elapsed=136.5s
+  ✔ nSta= 7  ratio=0%  10/10 runs OK  elapsed=188.3s
+  ✔ nSta= 7  ratio=20%  10/10 runs OK  elapsed=200.8s
+  ✔ nSta= 7  ratio=40%  10/10 runs OK  elapsed=163.9s
+  ✔ nSta= 7  ratio=60%  10/10 runs OK  elapsed=199.4s
+  ✔ nSta= 7  ratio=80%  10/10 runs OK  elapsed=185.4s
+  ✔ nSta= 7  ratio=100%  10/10 runs OK  elapsed=195.3s
+  ✔ nSta= 8  ratio=0%  10/10 runs OK  elapsed=236.5s
+  ✔ nSta= 8  ratio=20%  10/10 runs OK  elapsed=227.8s
+  ✔ nSta= 8  ratio=40%  10/10 runs OK  elapsed=217.2s
+  ✔ nSta= 8  ratio=60%  10/10 runs OK  elapsed=252.7s
+  ✔ nSta= 8  ratio=80%  10/10 runs OK  elapsed=222.2s
+  ✔ nSta= 8  ratio=100%  10/10 runs OK  elapsed=234.2s
+  ✔ nSta= 9  ratio=0%  10/10 runs OK  elapsed=304.9s
+  ✔ nSta= 9  ratio=20%  10/10 runs OK  elapsed=276.6s
+  ✔ nSta= 9  ratio=40%  10/10 runs OK  elapsed=315.4s
+  ✔ nSta= 9  ratio=60%  10/10 runs OK  elapsed=304.1s
+  ✔ nSta= 9  ratio=80%  10/10 runs OK  elapsed=268.4s
+  ✔ nSta= 9  ratio=100%  10/10 runs OK  elapsed=331.4s
+  ✔ nSta=10  ratio=0%  10/10 runs OK  elapsed=321.4s
+  ✔ nSta=10  ratio=20%  10/10 runs OK  elapsed=381.2s
+  ✔ nSta=10  ratio=40%  10/10 runs OK  elapsed=323.0s
+  ✔ nSta=10  ratio=60%  10/10 runs OK  elapsed=404.4s
+  ✔ nSta=10  ratio=80%  10/10 runs OK  elapsed=350.8s
+  ✔ nSta=10  ratio=100%  10/10 runs OK  elapsed=377.0s
+  ✔ nSta=11  ratio=0%  10/10 runs OK  elapsed=389.9s
+  ✔ nSta=11  ratio=20%  10/10 runs OK  elapsed=445.2s
+  ✔ nSta=11  ratio=40%  10/10 runs OK  elapsed=423.1s
+  ✔ nSta=11  ratio=60%  10/10 runs OK  elapsed=427.4s
+  ✔ nSta=11  ratio=80%  10/10 runs OK  elapsed=400.6s
+  ✔ nSta=11  ratio=100%  10/10 runs OK  elapsed=434.7s
+  ✔ nSta=12  ratio=0%  10/10 runs OK  elapsed=509.7s
+  ✔ nSta=12  ratio=20%  10/10 runs OK  elapsed=527.7s
+  ✔ nSta=12  ratio=40%  10/10 runs OK  elapsed=475.2s
+  ✔ nSta=12  ratio=60%  10/10 runs OK  elapsed=500.7s
+  ✔ nSta=12  ratio=80%  10/10 runs OK  elapsed=515.3s
+  ✔ nSta=12  ratio=100%  10/10 runs OK  elapsed=575.3s
+  ✔ nSta=13  ratio=0%  10/10 runs OK  elapsed=503.9s
+  ✔ nSta=13  ratio=20%  10/10 runs OK  elapsed=544.6s
+  ✔ nSta=13  ratio=40%  10/10 runs OK  elapsed=631.0s
+  ✔ nSta=13  ratio=60%  10/10 runs OK  elapsed=609.5s
+  ✔ nSta=13  ratio=80%  10/10 runs OK  elapsed=582.9s
+  ✔ nSta=13  ratio=100%  10/10 runs OK  elapsed=559.3s
+  ✔ nSta=14  ratio=0%  10/10 runs OK  elapsed=763.1s
+  ✔ nSta=14  ratio=20%  10/10 runs OK  elapsed=635.9s
+  ✔ nSta=14  ratio=40%  10/10 runs OK  elapsed=677.2s
+  ✔ nSta=14  ratio=60%  10/10 runs OK  elapsed=697.6s
+  ✔ nSta=14  ratio=80%  10/10 runs OK  elapsed=695.2s
+  ✔ nSta=14  ratio=100%  10/10 runs OK  elapsed=669.0s
+  ✔ nSta=15  ratio=0%  10/10 runs OK  elapsed=749.0s
+  ✔ nSta=15  ratio=20%  10/10 runs OK  elapsed=799.6s
+  ✔ nSta=15  ratio=40%  10/10 runs OK  elapsed=803.5s
+  ✔ nSta=15  ratio=60%  10/10 runs OK  elapsed=732.5s
+  ✔ nSta=15  ratio=80%  10/10 runs OK  elapsed=850.2s
+  ✔ nSta=15  ratio=100%  10/10 runs OK  elapsed=740.0s
+  ✔ nSta=16  ratio=0%  10/10 runs OK  elapsed=930.5s
+  ✔ nSta=16  ratio=20%  10/10 runs OK  elapsed=846.0s
+  ✔ nSta=16  ratio=40%  10/10 runs OK  elapsed=878.3s
+  ✔ nSta=16  ratio=60%  10/10 runs OK  elapsed=937.5s
+  ✔ nSta=16  ratio=80%  10/10 runs OK  elapsed=871.3s
+  ✔ nSta=16  ratio=100%  10/10 runs OK  elapsed=1025.5s
+  ✔ nSta=17  ratio=0%  10/10 runs OK  elapsed=1028.7s
+  ✔ nSta=17  ratio=20%  10/10 runs OK  elapsed=1040.5s
+  ✔ nSta=17  ratio=40%  10/10 runs OK  elapsed=977.3s
+  ✔ nSta=17  ratio=60%  10/10 runs OK  elapsed=1054.1s
+  ✔ nSta=17  ratio=80%  10/10 runs OK  elapsed=974.5s
+  ✔ nSta=17  ratio=100%  10/10 runs OK  elapsed=1141.0s
+  ✔ nSta=18  ratio=0%  10/10 runs OK  elapsed=1043.4s
+  ✔ nSta=18  ratio=20%  10/10 runs OK  elapsed=1101.0s
+  ✔ nSta=18  ratio=40%  10/10 runs OK  elapsed=1128.1s
+  ✔ nSta=18  ratio=60%  10/10 runs OK  elapsed=1042.4s
+  ✔ nSta=18  ratio=80%  10/10 runs OK  elapsed=1079.5s
+  ✔ nSta=18  ratio=100%  10/10 runs OK  elapsed=1157.7s
+  ✔ nSta=19  ratio=0%  10/10 runs OK  elapsed=1154.6s
+  ✔ nSta=19  ratio=20%  10/10 runs OK  elapsed=1168.9s
+  ✔ nSta=19  ratio=40%  10/10 runs OK  elapsed=1038.7s
+  ✔ nSta=19  ratio=60%  10/10 runs OK  elapsed=1287.4s
+  ✔ nSta=19  ratio=80%  10/10 runs OK  elapsed=1107.6s
+  ✔ nSta=19  ratio=100%  10/10 runs OK  elapsed=1140.0s
+  ✔ nSta=20  ratio=0%  10/10 runs OK  elapsed=1357.1s
+  ✔ nSta=20  ratio=20%  10/10 runs OK  elapsed=1199.0s
+  ✔ nSta=20  ratio=40%  10/10 runs OK  elapsed=1222.7s
+  ✔ nSta=20  ratio=60%  10/10 runs OK  elapsed=1172.7s
+  ✔ nSta=20  ratio=80%  10/10 runs OK  elapsed=1185.1s
+  ✔ nSta=20  ratio=100%  10/10 runs OK  elapsed=1432.5s
+  ✔ nSta=21  ratio=0%  10/10 runs OK  elapsed=1244.5s
+  ✔ nSta=21  ratio=20%  10/10 runs OK  elapsed=1320.9s
+  ✔ nSta=21  ratio=40%  10/10 runs OK  elapsed=1273.2s
+  ✔ nSta=21  ratio=60%  10/10 runs OK  elapsed=1383.0s
+  ✔ nSta=21  ratio=80%  10/10 runs OK  elapsed=1224.7s
+  ✔ nSta=21  ratio=100%  10/10 runs OK  elapsed=1226.4s
+  ✔ nSta=22  ratio=0%  10/10 runs OK  elapsed=1462.9s
+  ✔ nSta=22  ratio=20%  10/10 runs OK  elapsed=1299.3s
+  ✔ nSta=22  ratio=40%  10/10 runs OK  elapsed=1305.7s
+  ✔ nSta=22  ratio=60%  10/10 runs OK  elapsed=1345.2s
+  ✔ nSta=22  ratio=80%  10/10 runs OK  elapsed=1307.4s
+  ✔ nSta=22  ratio=100%  10/10 runs OK  elapsed=1516.6s
+  ✔ nSta=23  ratio=0%  10/10 runs OK  elapsed=1480.9s
+  ✔ nSta=23  ratio=20%  10/10 runs OK  elapsed=1349.5s
+  ✔ nSta=23  ratio=40%  10/10 runs OK  elapsed=1405.2s
+  ✔ nSta=23  ratio=60%  10/10 runs OK  elapsed=1495.8s
+  ✔ nSta=23  ratio=80%  10/10 runs OK  elapsed=1455.7s
+  ✔ nSta=23  ratio=100%  10/10 runs OK  elapsed=1503.5s
+  ✔ nSta=24  ratio=0%  10/10 runs OK  elapsed=1456.6s
+  ✔ nSta=24  ratio=20%  10/10 runs OK  elapsed=1553.1s
+  ✔ nSta=24  ratio=40%  10/10 runs OK  elapsed=1398.3s
+  ✔ nSta=24  ratio=60%  10/10 runs OK  elapsed=1551.2s
+  ✔ nSta=24  ratio=80%  10/10 runs OK  elapsed=1353.5s
+  ✔ nSta=24  ratio=100%  10/10 runs OK  elapsed=1562.2s
+  ✔ nSta=25  ratio=0%  10/10 runs OK  elapsed=1542.0s
+  ✔ nSta=25  ratio=20%  10/10 runs OK  elapsed=1526.4s
+  ✔ nSta=25  ratio=40%  10/10 runs OK  elapsed=1606.7s
+  ✔ nSta=25  ratio=60%  10/10 runs OK  elapsed=1512.8s
+  ✔ nSta=25  ratio=80%  10/10 runs OK  elapsed=1552.6s
+  ✔ nSta=25  ratio=100%  10/10 runs OK  elapsed=1405.3s
+  ✔ nSta=26  ratio=0%  10/10 runs OK  elapsed=1874.2s
+  ✔ nSta=26  ratio=20%  10/10 runs OK  elapsed=1550.1s
+  ✔ nSta=26  ratio=40%  10/10 runs OK  elapsed=1456.9s
+  ✔ nSta=26  ratio=60%  10/10 runs OK  elapsed=1671.0s
+  ✔ nSta=26  ratio=80%  10/10 runs OK  elapsed=1496.8s
+  ✔ nSta=26  ratio=100%  10/10 runs OK  elapsed=1723.0s
+  ✔ nSta=27  ratio=0%  10/10 runs OK  elapsed=1638.8s
+  ✔ nSta=27  ratio=20%  10/10 runs OK  elapsed=1816.8s
+  ✔ nSta=27  ratio=40%  10/10 runs OK  elapsed=1504.1s
+  ✔ nSta=27  ratio=60%  10/10 runs OK  elapsed=1562.4s
+  ✔ nSta=27  ratio=80%  10/10 runs OK  elapsed=1832.2s
+  ✔ nSta=27  ratio=100%  10/10 runs OK  elapsed=1639.0s
+  ✔ nSta=28  ratio=0%  10/10 runs OK  elapsed=1735.4s
+  ✔ nSta=28  ratio=20%  10/10 runs OK  elapsed=1799.7s
+  ✔ nSta=28  ratio=40%  10/10 runs OK  elapsed=1550.2s
+  ✔ nSta=28  ratio=60%  10/10 runs OK  elapsed=1673.2s
+  ✔ nSta=28  ratio=80%  10/10 runs OK  elapsed=1713.5s
+  ✔ nSta=28  ratio=100%  10/10 runs OK  elapsed=1829.4s
+  ✔ nSta=29  ratio=0%  10/10 runs OK  elapsed=1689.7s
+  ✔ nSta=29  ratio=20%  10/10 runs OK  elapsed=1915.1s
+  ✔ nSta=29  ratio=40%  10/10 runs OK  elapsed=1878.6s
+  ✔ nSta=29  ratio=60%  10/10 runs OK  elapsed=1752.4s
+  ✔ nSta=29  ratio=80%  10/10 runs OK  elapsed=1678.2s
+  ✔ nSta=29  ratio=100%  10/10 runs OK  elapsed=1876.1s
+  ✔ nSta=30  ratio=0%  10/10 runs OK  elapsed=1824.3s
+  ✔ nSta=30  ratio=20%  10/10 runs OK  elapsed=1775.9s
+  ✔ nSta=30  ratio=40%  10/10 runs OK  elapsed=2027.8s
+  ✔ nSta=30  ratio=60%  10/10 runs OK  elapsed=1864.7s
+  ✔ nSta=30  ratio=80%  10/10 runs OK  elapsed=1705.6s
+  ✔ nSta=30  ratio=100%  10/10 runs OK  elapsed=2019.8s
+  ✔ nSta=31  ratio=0%  10/10 runs OK  elapsed=1728.8s
+  ✔ nSta=31  ratio=20%  10/10 runs OK  elapsed=1835.4s
+  ✔ nSta=31  ratio=40%  10/10 runs OK  elapsed=2001.1s
+  ✔ nSta=31  ratio=60%  10/10 runs OK  elapsed=1651.7s
+  ✔ nSta=31  ratio=80%  10/10 runs OK  elapsed=1855.1s
+  ✔ nSta=31  ratio=100%  10/10 runs OK  elapsed=2156.3s
+  ✔ nSta=32  ratio=0%  10/10 runs OK  elapsed=2023.7s
+  ✔ nSta=32  ratio=20%  10/10 runs OK  elapsed=2048.6s
+  ✔ nSta=32  ratio=40%  10/10 runs OK  elapsed=1992.1s
+  ✔ nSta=32  ratio=60%  10/10 runs OK  elapsed=1778.5s
+  ✔ nSta=32  ratio=80%  10/10 runs OK  elapsed=1945.8s
+  ✔ nSta=32  ratio=100%  10/10 runs OK  elapsed=2205.1s
+  ✔ nSta=33  ratio=0%  10/10 runs OK  elapsed=1689.6s
+  ✔ nSta=33  ratio=20%  10/10 runs OK  elapsed=2205.3s
+  ✔ nSta=33  ratio=40%  10/10 runs OK  elapsed=1840.5s
+  ✔ nSta=33  ratio=60%  10/10 runs OK  elapsed=2066.4s
+  ✔ nSta=33  ratio=80%  10/10 runs OK  elapsed=1846.8s
+  ✔ nSta=33  ratio=100%  10/10 runs OK  elapsed=2172.6s
+  ✔ nSta=34  ratio=0%  10/10 runs OK  elapsed=2002.5s
+  ✔ nSta=34  ratio=20%  10/10 runs OK  elapsed=2121.1s
+  ✔ nSta=34  ratio=40%  10/10 runs OK  elapsed=2104.3s
+  ✔ nSta=34  ratio=60%  10/10 runs OK  elapsed=1957.7s
+  ✔ nSta=34  ratio=80%  10/10 runs OK  elapsed=2109.7s
+  ✔ nSta=34  ratio=100%  10/10 runs OK  elapsed=1947.9s
+  ✔ nSta=35  ratio=0%  10/10 runs OK  elapsed=2327.2s
+  ✔ nSta=35  ratio=20%  10/10 runs OK  elapsed=2124.0s
+  ✔ nSta=35  ratio=40%  10/10 runs OK  elapsed=1925.6s
+  ✔ nSta=35  ratio=60%  10/10 runs OK  elapsed=2173.0s
+  ✔ nSta=35  ratio=80%  10/10 runs OK  elapsed=2231.1s
+  ✔ nSta=35  ratio=100%  10/10 runs OK  elapsed=1969.2s
+  ✔ nSta=36  ratio=0%  10/10 runs OK  elapsed=2224.2s
+  ✔ nSta=36  ratio=20%  10/10 runs OK  elapsed=2145.0s
+  ✔ nSta=36  ratio=40%  10/10 runs OK  elapsed=2232.2s
+  ✔ nSta=36  ratio=60%  10/10 runs OK  elapsed=2076.4s
+  ✔ nSta=36  ratio=80%  10/10 runs OK  elapsed=2031.3s
+  ✔ nSta=36  ratio=100%  10/10 runs OK  elapsed=2331.7s
+  ✔ nSta=37  ratio=0%  10/10 runs OK  elapsed=2167.0s
+  ✔ nSta=37  ratio=20%  10/10 runs OK  elapsed=2227.0s
+  ✔ nSta=37  ratio=40%  10/10 runs OK  elapsed=2138.8s
+  ✔ nSta=37  ratio=60%  10/10 runs OK  elapsed=2396.2s
+  ✔ nSta=37  ratio=80%  10/10 runs OK  elapsed=2112.9s
+  ✔ nSta=37  ratio=100%  10/10 runs OK  elapsed=2193.1s
+  ✔ nSta=38  ratio=0%  10/10 runs OK  elapsed=2492.5s
+  ✔ nSta=38  ratio=20%  10/10 runs OK  elapsed=2007.8s
+  ✔ nSta=38  ratio=40%  10/10 runs OK  elapsed=2448.0s
+  ✔ nSta=38  ratio=60%  10/10 runs OK  elapsed=2250.6s
+  ✔ nSta=38  ratio=80%  10/10 runs OK  elapsed=2312.3s
+  ✔ nSta=38  ratio=100%  10/10 runs OK  elapsed=2154.8s
+  ✔ nSta=39  ratio=0%  10/10 runs OK  elapsed=2375.6s
+  ✔ nSta=39  ratio=20%  10/10 runs OK  elapsed=2280.4s
+  ✔ nSta=39  ratio=40%  10/10 runs OK  elapsed=2497.9s
+  ✔ nSta=39  ratio=60%  10/10 runs OK  elapsed=2153.9s
+  ✔ nSta=39  ratio=80%  10/10 runs OK  elapsed=2422.9s
+  ✔ nSta=39  ratio=100%  10/10 runs OK  elapsed=2348.4s
+  ✔ nSta=40  ratio=0%  10/10 runs OK  elapsed=2478.0s
+  ✔ nSta=40  ratio=20%  10/10 runs OK  elapsed=2237.4s
+  ✔ nSta=40  ratio=40%  10/10 runs OK  elapsed=2349.3s
+  ✔ nSta=40  ratio=60%  10/10 runs OK  elapsed=2303.9s
+  ✔ nSta=40  ratio=80%  10/10 runs OK  elapsed=2441.6s
+  ✔ nSta=40  ratio=100%  10/10 runs OK  elapsed=2366.5s
+  ✔ nSta=41  ratio=0%  10/10 runs OK  elapsed=2522.2s
+  ✔ nSta=41  ratio=20%  10/10 runs OK  elapsed=2506.5s
+  ✔ nSta=41  ratio=40%  10/10 runs OK  elapsed=2339.3s
+  ✔ nSta=41  ratio=60%  10/10 runs OK  elapsed=2673.3s
+  ✔ nSta=41  ratio=80%  10/10 runs OK  elapsed=2333.0s
+  ✔ nSta=41  ratio=100%  10/10 runs OK  elapsed=2479.6s
+  ✔ nSta=42  ratio=0%  10/10 runs OK  elapsed=2656.5s
+  ✔ nSta=42  ratio=20%  10/10 runs OK  elapsed=2393.5s
+  ✔ nSta=42  ratio=40%  10/10 runs OK  elapsed=2488.9s
+  ✔ nSta=42  ratio=60%  10/10 runs OK  elapsed=2638.8s
+  ✔ nSta=42  ratio=80%  10/10 runs OK  elapsed=2280.0s
+  ✔ nSta=42  ratio=100%  10/10 runs OK  elapsed=2887.0s
+  ✔ nSta=43  ratio=0%  10/10 runs OK  elapsed=2280.8s
+  ✔ nSta=43  ratio=20%  10/10 runs OK  elapsed=2539.7s
+  ✔ nSta=43  ratio=40%  10/10 runs OK  elapsed=2635.0s
+  ✔ nSta=43  ratio=60%  10/10 runs OK  elapsed=2376.1s
+  ✔ nSta=43  ratio=80%  10/10 runs OK  elapsed=2785.6s
+  ✔ nSta=43  ratio=100%  10/10 runs OK  elapsed=2550.4s
+  ✔ nSta=44  ratio=0%  10/10 runs OK  elapsed=2590.7s
+  ✔ nSta=44  ratio=20%  10/10 runs OK  elapsed=2520.1s
+  ✔ nSta=44  ratio=40%  10/10 runs OK  elapsed=2569.8s
+  ✔ nSta=44  ratio=60%  10/10 runs OK  elapsed=2957.6s
+  ✔ nSta=44  ratio=80%  10/10 runs OK  elapsed=2506.5s
+  ✔ nSta=44  ratio=100%  10/10 runs OK  elapsed=2661.3s
+  ✔ nSta=45  ratio=0%  10/10 runs OK  elapsed=2699.0s
+  ✔ nSta=45  ratio=20%  10/10 runs OK  elapsed=2585.1s
+  ✔ nSta=45  ratio=40%  10/10 runs OK  elapsed=3194.7s
+  ✔ nSta=45  ratio=60%  10/10 runs OK  elapsed=2386.1s
+  ✔ nSta=45  ratio=80%  10/10 runs OK  elapsed=2387.2s
+  ✔ nSta=45  ratio=100%  10/10 runs OK  elapsed=3013.6s
+  ✔ nSta=46  ratio=0%  10/10 runs OK  elapsed=2684.0s
+  ✔ nSta=46  ratio=20%  10/10 runs OK  elapsed=2638.2s
+  ✔ nSta=46  ratio=40%  10/10 runs OK  elapsed=2700.2s
+  ✔ nSta=46  ratio=60%  10/10 runs OK  elapsed=2772.7s
+  ✔ nSta=46  ratio=80%  10/10 runs OK  elapsed=2785.3s
+  ✔ nSta=46  ratio=100%  10/10 runs OK  elapsed=2833.8s
+  ✔ nSta=47  ratio=0%  9/10 runs OK  elapsed=2940.9s
+  ✔ nSta=47  ratio=20%  10/10 runs OK  elapsed=2688.9s
+  ✔ nSta=47  ratio=40%  10/10 runs OK  elapsed=2568.0s
+  ✔ nSta=47  ratio=60%  10/10 runs OK  elapsed=2748.1s
+  ✔ nSta=47  ratio=80%  10/10 runs OK  elapsed=2701.7s
+  ✔ nSta=47  ratio=100%  10/10 runs OK  elapsed=2782.1s
+  ✔ nSta=48  ratio=0%  10/10 runs OK  elapsed=3236.6s
+  ✔ nSta=48  ratio=20%  10/10 runs OK  elapsed=2669.0s
+  ✔ nSta=48  ratio=40%  10/10 runs OK  elapsed=2981.5s
+  ✔ nSta=48  ratio=60%  10/10 runs OK  elapsed=2738.6s
+  ✔ nSta=48  ratio=80%  10/10 runs OK  elapsed=2851.5s
+  ✔ nSta=48  ratio=100%  10/10 runs OK  elapsed=2774.0s
+  ✔ nSta=49  ratio=0%  10/10 runs OK  elapsed=3248.7s
+  ✔ nSta=49  ratio=20%  10/10 runs OK  elapsed=2705.8s
+  ✔ nSta=49  ratio=40%  10/10 runs OK  elapsed=2979.2s
+  ✔ nSta=49  ratio=60%  10/10 runs OK  elapsed=2755.2s
+  ✔ nSta=49  ratio=80%  10/10 runs OK  elapsed=2981.5s
+  ✔ nSta=49  ratio=100%  10/10 runs OK  elapsed=2880.3s
+  ✔ nSta=50  ratio=0%  10/10 runs OK  elapsed=3058.2s
+  ✔ nSta=50  ratio=20%  10/10 runs OK  elapsed=3296.7s
+  ✔ nSta=50  ratio=40%  10/10 runs OK  elapsed=2771.4s
+  ✔ nSta=50  ratio=60%  10/10 runs OK  elapsed=2749.0s
+  ✔ nSta=50  ratio=80%  10/10 runs OK  elapsed=2842.8s
+  ✔ nSta=50  ratio=100%  10/10 runs OK  elapsed=2169.3s
 
 ────────────────────────────────────────────────────────────
   Generating statistics comparison...
 ────────────────────────────────────────────────────────────
-    ✔ ratio_sweep_statistics_0.5Mbps.txt  (138,056 bytes)
+    ✔ ratio_sweep_statistics_1Mbps.txt  (297,551 bytes)
+
+────────────────────────────────────────────────────────────
+  Generating PDF/CDF/Idle plots (parallel)...
+────────────────────────────────────────────────────────────
+  Plotting 49 charts in parallel (24 workers)...
+    ✔ vo_delay_probability_nSta5_1Mbps.pdf
+    ✔ vo_delay_probability_nSta10_1Mbps.pdf
+    ✔ vo_delay_probability_nSta3_1Mbps.pdf
+    ✔ vo_delay_probability_nSta9_1Mbps.pdf
+    ✔ vo_delay_probability_nSta11_1Mbps.pdf
+    ✔ vo_delay_probability_nSta13_1Mbps.pdf
+    ✔ vo_delay_probability_nSta19_1Mbps.pdf
+    ✔ vo_delay_probability_nSta7_1Mbps.pdf
+    ✔ vo_delay_probability_nSta4_1Mbps.pdf
+    ✔ vo_delay_probability_nSta2_1Mbps.pdf
+    ✔ vo_delay_probability_nSta14_1Mbps.pdf
+    ✔ vo_delay_probability_nSta17_1Mbps.pdf
+    ✔ vo_delay_probability_nSta8_1Mbps.pdf
+    ✔ vo_delay_probability_nSta16_1Mbps.pdf
+    ✔ vo_delay_probability_nSta15_1Mbps.pdf
+    ✔ vo_delay_probability_nSta20_1Mbps.pdf
+    ✔ vo_delay_probability_nSta12_1Mbps.pdf
+    ✔ vo_delay_probability_nSta6_1Mbps.pdf
+    ✔ vo_delay_probability_nSta18_1Mbps.pdf
+    ✔ vo_delay_probability_nSta22_1Mbps.pdf
+    ✔ vo_delay_probability_nSta21_1Mbps.pdf
+    ✔ vo_delay_probability_nSta25_1Mbps.pdf
+    ✔ vo_delay_probability_nSta23_1Mbps.pdf
+    ✔ vo_delay_probability_nSta24_1Mbps.pdf
+    ✔ vo_delay_probability_nSta26_1Mbps.pdf
+    ✔ vo_delay_probability_nSta28_1Mbps.pdf
+    ✔ vo_delay_probability_nSta30_1Mbps.pdf
+    ✔ vo_delay_probability_nSta31_1Mbps.pdf
+    ✔ vo_delay_probability_nSta29_1Mbps.pdf
+    ✔ vo_delay_probability_nSta27_1Mbps.pdf
+    ✔ vo_delay_probability_nSta37_1Mbps.pdf
+    ✔ vo_delay_probability_nSta35_1Mbps.pdf
+    ✔ vo_delay_probability_nSta33_1Mbps.pdf
+    ✔ vo_delay_probability_nSta38_1Mbps.pdf
+    ✔ vo_delay_probability_nSta32_1Mbps.pdf
+    ✔ vo_delay_probability_nSta34_1Mbps.pdf
+    ✔ vo_delay_probability_nSta42_1Mbps.pdf
+    ✔ vo_delay_probability_nSta39_1Mbps.pdf
+    ✔ vo_delay_probability_nSta43_1Mbps.pdf
+    ✔ vo_delay_probability_nSta36_1Mbps.pdf
+    ✔ vo_delay_probability_nSta41_1Mbps.pdf
+    ✔ vo_delay_probability_nSta46_1Mbps.pdf
+    ✔ vo_delay_probability_nSta47_1Mbps.pdf
+    ✔ vo_delay_probability_nSta40_1Mbps.pdf
+    ✔ vo_delay_probability_nSta44_1Mbps.pdf
+    ✔ vo_delay_probability_nSta45_1Mbps.pdf
+    ✔ vo_delay_probability_nSta48_1Mbps.pdf
+    ✔ vo_delay_probability_nSta49_1Mbps.pdf
+    ✔ vo_delay_probability_nSta50_1Mbps.pdf
+
+────────────────────────────────────────────────────────────
+  Generating Packet Loss vs nSta plot...
+────────────────────────────────────────────────────────────
+    ✔ vo_packet_loss_vs_nSta_1Mbps.pdf
+
+────────────────────────────────────────────────────────────
+  Generating P-EDCA Tx Ratio vs nSta plot...
+────────────────────────────────────────────────────────────
+    ✔ vo_pedca_tx_ratio_vs_nSta_1Mbps.pdf
 
 ════════════════════════════════════════════════════════════
-  Sweep complete!  Total time: 7097.3s
-  Output directory: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_0.5Mbps_rts_off
+  Sweep complete!  Total time: 22312.1s
+  Output directory: /home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on_D13_mod
 
   Averaged CSV files:
-    r000_vo_delay_pdf_nSta10_0.5Mbps.csv  (7,907 bytes)
-    r000_vo_delay_pdf_nSta12_0.5Mbps.csv  (8,851 bytes)
-    r000_vo_delay_pdf_nSta14_0.5Mbps.csv  (22,540 bytes)
-    r000_vo_delay_pdf_nSta16_0.5Mbps.csv  (12,590 bytes)
-    r000_vo_delay_pdf_nSta18_0.5Mbps.csv  (26,276 bytes)
-    r000_vo_delay_pdf_nSta20_0.5Mbps.csv  (30,411 bytes)
-    r000_vo_delay_pdf_nSta22_0.5Mbps.csv  (37,102 bytes)
-    r000_vo_delay_pdf_nSta24_0.5Mbps.csv  (35,150 bytes)
-    r000_vo_delay_pdf_nSta26_0.5Mbps.csv  (54,391 bytes)
-    r000_vo_delay_pdf_nSta28_0.5Mbps.csv  (32,514 bytes)
-    r000_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,004 bytes)
-    r000_vo_delay_pdf_nSta30_0.5Mbps.csv  (60,838 bytes)
-    r000_vo_delay_pdf_nSta32_0.5Mbps.csv  (53,833 bytes)
-    r000_vo_delay_pdf_nSta34_0.5Mbps.csv  (127,628 bytes)
-    r000_vo_delay_pdf_nSta36_0.5Mbps.csv  (165,259 bytes)
-    r000_vo_delay_pdf_nSta38_0.5Mbps.csv  (169,464 bytes)
-    r000_vo_delay_pdf_nSta40_0.5Mbps.csv  (172,567 bytes)
-    r000_vo_delay_pdf_nSta42_0.5Mbps.csv  (170,110 bytes)
-    r000_vo_delay_pdf_nSta44_0.5Mbps.csv  (171,968 bytes)
-    r000_vo_delay_pdf_nSta46_0.5Mbps.csv  (170,310 bytes)
-    r000_vo_delay_pdf_nSta48_0.5Mbps.csv  (169,705 bytes)
-    r000_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,268 bytes)
-    r000_vo_delay_pdf_nSta50_0.5Mbps.csv  (168,272 bytes)
-    r000_vo_delay_pdf_nSta6_0.5Mbps.csv  (1,308 bytes)
-    r000_vo_delay_pdf_nSta8_0.5Mbps.csv  (7,600 bytes)
-    r020_vo_delay_pdf_nSta10_0.5Mbps.csv  (8,095 bytes)
-    r020_vo_delay_pdf_nSta12_0.5Mbps.csv  (9,664 bytes)
-    r020_vo_delay_pdf_nSta14_0.5Mbps.csv  (22,293 bytes)
-    r020_vo_delay_pdf_nSta16_0.5Mbps.csv  (15,094 bytes)
-    r020_vo_delay_pdf_nSta18_0.5Mbps.csv  (27,164 bytes)
-    r020_vo_delay_pdf_nSta20_0.5Mbps.csv  (31,173 bytes)
-    r020_vo_delay_pdf_nSta22_0.5Mbps.csv  (38,267 bytes)
-    r020_vo_delay_pdf_nSta24_0.5Mbps.csv  (41,637 bytes)
-    r020_vo_delay_pdf_nSta26_0.5Mbps.csv  (61,872 bytes)
-    r020_vo_delay_pdf_nSta28_0.5Mbps.csv  (46,328 bytes)
-    r020_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,139 bytes)
-    r020_vo_delay_pdf_nSta30_0.5Mbps.csv  (61,542 bytes)
-    r020_vo_delay_pdf_nSta32_0.5Mbps.csv  (68,577 bytes)
-    r020_vo_delay_pdf_nSta34_0.5Mbps.csv  (138,802 bytes)
-    r020_vo_delay_pdf_nSta36_0.5Mbps.csv  (170,933 bytes)
-    r020_vo_delay_pdf_nSta38_0.5Mbps.csv  (171,340 bytes)
-    r020_vo_delay_pdf_nSta40_0.5Mbps.csv  (174,785 bytes)
-    r020_vo_delay_pdf_nSta42_0.5Mbps.csv  (170,806 bytes)
-    r020_vo_delay_pdf_nSta44_0.5Mbps.csv  (170,180 bytes)
-    r020_vo_delay_pdf_nSta46_0.5Mbps.csv  (170,966 bytes)
-    r020_vo_delay_pdf_nSta48_0.5Mbps.csv  (172,397 bytes)
-    r020_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,592 bytes)
-    r020_vo_delay_pdf_nSta50_0.5Mbps.csv  (170,864 bytes)
-    r020_vo_delay_pdf_nSta6_0.5Mbps.csv  (2,475 bytes)
-    r020_vo_delay_pdf_nSta8_0.5Mbps.csv  (8,000 bytes)
-    r040_vo_delay_pdf_nSta10_0.5Mbps.csv  (8,561 bytes)
-    r040_vo_delay_pdf_nSta12_0.5Mbps.csv  (10,140 bytes)
-    r040_vo_delay_pdf_nSta14_0.5Mbps.csv  (23,116 bytes)
-    r040_vo_delay_pdf_nSta16_0.5Mbps.csv  (14,778 bytes)
-    r040_vo_delay_pdf_nSta18_0.5Mbps.csv  (28,818 bytes)
-    r040_vo_delay_pdf_nSta20_0.5Mbps.csv  (32,563 bytes)
-    r040_vo_delay_pdf_nSta22_0.5Mbps.csv  (38,424 bytes)
-    r040_vo_delay_pdf_nSta24_0.5Mbps.csv  (42,439 bytes)
-    r040_vo_delay_pdf_nSta26_0.5Mbps.csv  (63,548 bytes)
-    r040_vo_delay_pdf_nSta28_0.5Mbps.csv  (46,108 bytes)
-    r040_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,139 bytes)
-    r040_vo_delay_pdf_nSta30_0.5Mbps.csv  (62,814 bytes)
-    r040_vo_delay_pdf_nSta32_0.5Mbps.csv  (70,208 bytes)
-    r040_vo_delay_pdf_nSta34_0.5Mbps.csv  (154,536 bytes)
-    r040_vo_delay_pdf_nSta36_0.5Mbps.csv  (173,859 bytes)
-    r040_vo_delay_pdf_nSta38_0.5Mbps.csv  (175,001 bytes)
-    r040_vo_delay_pdf_nSta40_0.5Mbps.csv  (175,450 bytes)
-    r040_vo_delay_pdf_nSta42_0.5Mbps.csv  (172,748 bytes)
-    r040_vo_delay_pdf_nSta44_0.5Mbps.csv  (173,386 bytes)
-    r040_vo_delay_pdf_nSta46_0.5Mbps.csv  (174,057 bytes)
-    r040_vo_delay_pdf_nSta48_0.5Mbps.csv  (170,908 bytes)
-    r040_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,592 bytes)
-    r040_vo_delay_pdf_nSta50_0.5Mbps.csv  (173,219 bytes)
-    r040_vo_delay_pdf_nSta6_0.5Mbps.csv  (2,475 bytes)
-    r040_vo_delay_pdf_nSta8_0.5Mbps.csv  (8,142 bytes)
-    r060_vo_delay_pdf_nSta10_0.5Mbps.csv  (8,382 bytes)
-    r060_vo_delay_pdf_nSta12_0.5Mbps.csv  (10,551 bytes)
-    r060_vo_delay_pdf_nSta14_0.5Mbps.csv  (23,400 bytes)
-    r060_vo_delay_pdf_nSta16_0.5Mbps.csv  (14,585 bytes)
-    r060_vo_delay_pdf_nSta18_0.5Mbps.csv  (28,907 bytes)
-    r060_vo_delay_pdf_nSta20_0.5Mbps.csv  (32,667 bytes)
-    r060_vo_delay_pdf_nSta22_0.5Mbps.csv  (39,297 bytes)
-    r060_vo_delay_pdf_nSta24_0.5Mbps.csv  (43,965 bytes)
-    r060_vo_delay_pdf_nSta26_0.5Mbps.csv  (64,684 bytes)
-    r060_vo_delay_pdf_nSta28_0.5Mbps.csv  (48,867 bytes)
-    r060_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,139 bytes)
-    r060_vo_delay_pdf_nSta30_0.5Mbps.csv  (63,568 bytes)
-    r060_vo_delay_pdf_nSta32_0.5Mbps.csv  (71,299 bytes)
-    r060_vo_delay_pdf_nSta34_0.5Mbps.csv  (161,947 bytes)
-    r060_vo_delay_pdf_nSta36_0.5Mbps.csv  (175,721 bytes)
-    r060_vo_delay_pdf_nSta38_0.5Mbps.csv  (176,379 bytes)
-    r060_vo_delay_pdf_nSta40_0.5Mbps.csv  (178,493 bytes)
-    r060_vo_delay_pdf_nSta42_0.5Mbps.csv  (174,658 bytes)
-    r060_vo_delay_pdf_nSta44_0.5Mbps.csv  (176,610 bytes)
-    r060_vo_delay_pdf_nSta46_0.5Mbps.csv  (172,981 bytes)
-    r060_vo_delay_pdf_nSta48_0.5Mbps.csv  (173,549 bytes)
-    r060_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,694 bytes)
-    r060_vo_delay_pdf_nSta50_0.5Mbps.csv  (173,231 bytes)
-    r060_vo_delay_pdf_nSta6_0.5Mbps.csv  (2,475 bytes)
-    r060_vo_delay_pdf_nSta8_0.5Mbps.csv  (8,142 bytes)
-    r080_vo_delay_pdf_nSta10_0.5Mbps.csv  (8,282 bytes)
-    r080_vo_delay_pdf_nSta12_0.5Mbps.csv  (9,795 bytes)
-    r080_vo_delay_pdf_nSta14_0.5Mbps.csv  (24,125 bytes)
-    r080_vo_delay_pdf_nSta16_0.5Mbps.csv  (15,247 bytes)
-    r080_vo_delay_pdf_nSta18_0.5Mbps.csv  (29,012 bytes)
-    r080_vo_delay_pdf_nSta20_0.5Mbps.csv  (34,488 bytes)
-    r080_vo_delay_pdf_nSta22_0.5Mbps.csv  (39,903 bytes)
-    r080_vo_delay_pdf_nSta24_0.5Mbps.csv  (44,860 bytes)
-    r080_vo_delay_pdf_nSta26_0.5Mbps.csv  (64,014 bytes)
-    r080_vo_delay_pdf_nSta28_0.5Mbps.csv  (47,108 bytes)
-    r080_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,139 bytes)
-    r080_vo_delay_pdf_nSta30_0.5Mbps.csv  (64,214 bytes)
-    r080_vo_delay_pdf_nSta32_0.5Mbps.csv  (72,445 bytes)
-    r080_vo_delay_pdf_nSta34_0.5Mbps.csv  (169,143 bytes)
-    r080_vo_delay_pdf_nSta36_0.5Mbps.csv  (177,954 bytes)
-    r080_vo_delay_pdf_nSta38_0.5Mbps.csv  (176,971 bytes)
-    r080_vo_delay_pdf_nSta40_0.5Mbps.csv  (175,954 bytes)
-    r080_vo_delay_pdf_nSta42_0.5Mbps.csv  (175,227 bytes)
-    r080_vo_delay_pdf_nSta44_0.5Mbps.csv  (176,526 bytes)
-    r080_vo_delay_pdf_nSta46_0.5Mbps.csv  (176,939 bytes)
-    r080_vo_delay_pdf_nSta48_0.5Mbps.csv  (174,847 bytes)
-    r080_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,839 bytes)
-    r080_vo_delay_pdf_nSta50_0.5Mbps.csv  (174,360 bytes)
-    r080_vo_delay_pdf_nSta6_0.5Mbps.csv  (2,475 bytes)
-    r080_vo_delay_pdf_nSta8_0.5Mbps.csv  (7,682 bytes)
-    r100_vo_delay_pdf_nSta10_0.5Mbps.csv  (8,635 bytes)
-    r100_vo_delay_pdf_nSta12_0.5Mbps.csv  (9,969 bytes)
-    r100_vo_delay_pdf_nSta14_0.5Mbps.csv  (23,591 bytes)
-    r100_vo_delay_pdf_nSta16_0.5Mbps.csv  (15,263 bytes)
-    r100_vo_delay_pdf_nSta18_0.5Mbps.csv  (29,014 bytes)
-    r100_vo_delay_pdf_nSta20_0.5Mbps.csv  (33,650 bytes)
-    r100_vo_delay_pdf_nSta22_0.5Mbps.csv  (40,040 bytes)
-    r100_vo_delay_pdf_nSta24_0.5Mbps.csv  (45,372 bytes)
-    r100_vo_delay_pdf_nSta26_0.5Mbps.csv  (65,358 bytes)
-    r100_vo_delay_pdf_nSta28_0.5Mbps.csv  (49,188 bytes)
-    r100_vo_delay_pdf_nSta2_0.5Mbps.csv  (1,139 bytes)
-    r100_vo_delay_pdf_nSta30_0.5Mbps.csv  (66,420 bytes)
-    r100_vo_delay_pdf_nSta32_0.5Mbps.csv  (85,641 bytes)
-    r100_vo_delay_pdf_nSta34_0.5Mbps.csv  (172,193 bytes)
-    r100_vo_delay_pdf_nSta36_0.5Mbps.csv  (177,896 bytes)
-    r100_vo_delay_pdf_nSta38_0.5Mbps.csv  (177,514 bytes)
-    r100_vo_delay_pdf_nSta40_0.5Mbps.csv  (178,696 bytes)
-    r100_vo_delay_pdf_nSta42_0.5Mbps.csv  (175,692 bytes)
-    r100_vo_delay_pdf_nSta44_0.5Mbps.csv  (179,634 bytes)
-    r100_vo_delay_pdf_nSta46_0.5Mbps.csv  (176,359 bytes)
-    r100_vo_delay_pdf_nSta48_0.5Mbps.csv  (176,835 bytes)
-    r100_vo_delay_pdf_nSta4_0.5Mbps.csv  (5,839 bytes)
-    r100_vo_delay_pdf_nSta50_0.5Mbps.csv  (173,312 bytes)
-    r100_vo_delay_pdf_nSta6_0.5Mbps.csv  (2,475 bytes)
-    r100_vo_delay_pdf_nSta8_0.5Mbps.csv  (7,195 bytes)
+    r000_vo_delay_pdf_nSta10_1Mbps.csv  (25,857 bytes)
+    r000_vo_delay_pdf_nSta11_1Mbps.csv  (23,859 bytes)
+    r000_vo_delay_pdf_nSta12_1Mbps.csv  (40,688 bytes)
+    r000_vo_delay_pdf_nSta13_1Mbps.csv  (48,915 bytes)
+    r000_vo_delay_pdf_nSta14_1Mbps.csv  (52,921 bytes)
+    r000_vo_delay_pdf_nSta15_1Mbps.csv  (64,609 bytes)
+    r000_vo_delay_pdf_nSta16_1Mbps.csv  (79,998 bytes)
+    r000_vo_delay_pdf_nSta17_1Mbps.csv  (158,802 bytes)
+    r000_vo_delay_pdf_nSta18_1Mbps.csv  (198,386 bytes)
+    r000_vo_delay_pdf_nSta19_1Mbps.csv  (239,898 bytes)
+    r000_vo_delay_pdf_nSta20_1Mbps.csv  (304,182 bytes)
+    r000_vo_delay_pdf_nSta21_1Mbps.csv  (337,615 bytes)
+    r000_vo_delay_pdf_nSta22_1Mbps.csv  (382,044 bytes)
+    r000_vo_delay_pdf_nSta23_1Mbps.csv  (436,045 bytes)
+    r000_vo_delay_pdf_nSta24_1Mbps.csv  (458,492 bytes)
+    r000_vo_delay_pdf_nSta25_1Mbps.csv  (523,815 bytes)
+    r000_vo_delay_pdf_nSta26_1Mbps.csv  (496,645 bytes)
+    r000_vo_delay_pdf_nSta27_1Mbps.csv  (539,794 bytes)
+    r000_vo_delay_pdf_nSta28_1Mbps.csv  (527,303 bytes)
+    r000_vo_delay_pdf_nSta29_1Mbps.csv  (626,044 bytes)
+    r000_vo_delay_pdf_nSta2_1Mbps.csv  (1,718 bytes)
+    r000_vo_delay_pdf_nSta30_1Mbps.csv  (574,333 bytes)
+    r000_vo_delay_pdf_nSta31_1Mbps.csv  (753,295 bytes)
+    r000_vo_delay_pdf_nSta32_1Mbps.csv  (676,323 bytes)
+    r000_vo_delay_pdf_nSta33_1Mbps.csv  (819,379 bytes)
+    r000_vo_delay_pdf_nSta34_1Mbps.csv  (678,129 bytes)
+    r000_vo_delay_pdf_nSta35_1Mbps.csv  (706,315 bytes)
+    r000_vo_delay_pdf_nSta36_1Mbps.csv  (621,868 bytes)
+    r000_vo_delay_pdf_nSta37_1Mbps.csv  (669,119 bytes)
+    r000_vo_delay_pdf_nSta38_1Mbps.csv  (675,044 bytes)
+    r000_vo_delay_pdf_nSta39_1Mbps.csv  (669,466 bytes)
+    r000_vo_delay_pdf_nSta3_1Mbps.csv  (2,391 bytes)
+    r000_vo_delay_pdf_nSta40_1Mbps.csv  (956,727 bytes)
+    r000_vo_delay_pdf_nSta41_1Mbps.csv  (738,444 bytes)
+    r000_vo_delay_pdf_nSta42_1Mbps.csv  (776,218 bytes)
+    r000_vo_delay_pdf_nSta43_1Mbps.csv  (644,099 bytes)
+    r000_vo_delay_pdf_nSta44_1Mbps.csv  (1,088,720 bytes)
+    r000_vo_delay_pdf_nSta45_1Mbps.csv  (939,421 bytes)
+    r000_vo_delay_pdf_nSta46_1Mbps.csv  (779,852 bytes)
+    r000_vo_delay_pdf_nSta47_1Mbps.csv  (967,934 bytes)
+    r000_vo_delay_pdf_nSta48_1Mbps.csv  (789,290 bytes)
+    r000_vo_delay_pdf_nSta49_1Mbps.csv  (777,680 bytes)
+    r000_vo_delay_pdf_nSta4_1Mbps.csv  (8,715 bytes)
+    r000_vo_delay_pdf_nSta50_1Mbps.csv  (784,912 bytes)
+    r000_vo_delay_pdf_nSta5_1Mbps.csv  (4,488 bytes)
+    r000_vo_delay_pdf_nSta6_1Mbps.csv  (13,779 bytes)
+    r000_vo_delay_pdf_nSta7_1Mbps.csv  (14,159 bytes)
+    r000_vo_delay_pdf_nSta8_1Mbps.csv  (17,336 bytes)
+    r000_vo_delay_pdf_nSta9_1Mbps.csv  (21,459 bytes)
+    r020_vo_delay_pdf_nSta10_1Mbps.csv  (25,728 bytes)
+    r020_vo_delay_pdf_nSta11_1Mbps.csv  (24,687 bytes)
+    r020_vo_delay_pdf_nSta12_1Mbps.csv  (43,639 bytes)
+    r020_vo_delay_pdf_nSta13_1Mbps.csv  (51,439 bytes)
+    r020_vo_delay_pdf_nSta14_1Mbps.csv  (55,437 bytes)
+    r020_vo_delay_pdf_nSta15_1Mbps.csv  (64,562 bytes)
+    r020_vo_delay_pdf_nSta16_1Mbps.csv  (88,576 bytes)
+    r020_vo_delay_pdf_nSta17_1Mbps.csv  (166,646 bytes)
+    r020_vo_delay_pdf_nSta18_1Mbps.csv  (205,094 bytes)
+    r020_vo_delay_pdf_nSta19_1Mbps.csv  (252,135 bytes)
+    r020_vo_delay_pdf_nSta20_1Mbps.csv  (315,427 bytes)
+    r020_vo_delay_pdf_nSta21_1Mbps.csv  (350,354 bytes)
+    r020_vo_delay_pdf_nSta22_1Mbps.csv  (374,736 bytes)
+    r020_vo_delay_pdf_nSta23_1Mbps.csv  (484,761 bytes)
+    r020_vo_delay_pdf_nSta24_1Mbps.csv  (496,084 bytes)
+    r020_vo_delay_pdf_nSta25_1Mbps.csv  (553,190 bytes)
+    r020_vo_delay_pdf_nSta26_1Mbps.csv  (479,341 bytes)
+    r020_vo_delay_pdf_nSta27_1Mbps.csv  (595,523 bytes)
+    r020_vo_delay_pdf_nSta28_1Mbps.csv  (593,816 bytes)
+    r020_vo_delay_pdf_nSta29_1Mbps.csv  (545,216 bytes)
+    r020_vo_delay_pdf_nSta2_1Mbps.csv  (1,718 bytes)
+    r020_vo_delay_pdf_nSta30_1Mbps.csv  (678,445 bytes)
+    r020_vo_delay_pdf_nSta31_1Mbps.csv  (586,369 bytes)
+    r020_vo_delay_pdf_nSta32_1Mbps.csv  (834,151 bytes)
+    r020_vo_delay_pdf_nSta33_1Mbps.csv  (803,638 bytes)
+    r020_vo_delay_pdf_nSta34_1Mbps.csv  (924,779 bytes)
+    r020_vo_delay_pdf_nSta35_1Mbps.csv  (892,011 bytes)
+    r020_vo_delay_pdf_nSta36_1Mbps.csv  (845,095 bytes)
+    r020_vo_delay_pdf_nSta37_1Mbps.csv  (701,576 bytes)
+    r020_vo_delay_pdf_nSta38_1Mbps.csv  (648,836 bytes)
+    r020_vo_delay_pdf_nSta39_1Mbps.csv  (816,066 bytes)
+    r020_vo_delay_pdf_nSta3_1Mbps.csv  (2,391 bytes)
+    r020_vo_delay_pdf_nSta40_1Mbps.csv  (949,199 bytes)
+    r020_vo_delay_pdf_nSta41_1Mbps.csv  (871,256 bytes)
+    r020_vo_delay_pdf_nSta42_1Mbps.csv  (708,461 bytes)
+    r020_vo_delay_pdf_nSta43_1Mbps.csv  (644,909 bytes)
+    r020_vo_delay_pdf_nSta44_1Mbps.csv  (968,432 bytes)
+    r020_vo_delay_pdf_nSta45_1Mbps.csv  (909,049 bytes)
+    r020_vo_delay_pdf_nSta46_1Mbps.csv  (747,791 bytes)
+    r020_vo_delay_pdf_nSta47_1Mbps.csv  (717,072 bytes)
+    r020_vo_delay_pdf_nSta48_1Mbps.csv  (744,234 bytes)
+    r020_vo_delay_pdf_nSta49_1Mbps.csv  (768,323 bytes)
+    r020_vo_delay_pdf_nSta4_1Mbps.csv  (8,715 bytes)
+    r020_vo_delay_pdf_nSta50_1Mbps.csv  (873,557 bytes)
+    r020_vo_delay_pdf_nSta5_1Mbps.csv  (4,443 bytes)
+    r020_vo_delay_pdf_nSta6_1Mbps.csv  (13,968 bytes)
+    r020_vo_delay_pdf_nSta7_1Mbps.csv  (14,037 bytes)
+    r020_vo_delay_pdf_nSta8_1Mbps.csv  (17,762 bytes)
+    r020_vo_delay_pdf_nSta9_1Mbps.csv  (21,551 bytes)
+    r040_vo_delay_pdf_nSta10_1Mbps.csv  (28,227 bytes)
+    r040_vo_delay_pdf_nSta11_1Mbps.csv  (25,362 bytes)
+    r040_vo_delay_pdf_nSta12_1Mbps.csv  (45,177 bytes)
+    r040_vo_delay_pdf_nSta13_1Mbps.csv  (51,614 bytes)
+    r040_vo_delay_pdf_nSta14_1Mbps.csv  (59,638 bytes)
+    r040_vo_delay_pdf_nSta15_1Mbps.csv  (66,658 bytes)
+    r040_vo_delay_pdf_nSta16_1Mbps.csv  (102,799 bytes)
+    r040_vo_delay_pdf_nSta17_1Mbps.csv  (171,434 bytes)
+    r040_vo_delay_pdf_nSta18_1Mbps.csv  (216,061 bytes)
+    r040_vo_delay_pdf_nSta19_1Mbps.csv  (258,237 bytes)
+    r040_vo_delay_pdf_nSta20_1Mbps.csv  (310,265 bytes)
+    r040_vo_delay_pdf_nSta21_1Mbps.csv  (351,397 bytes)
+    r040_vo_delay_pdf_nSta22_1Mbps.csv  (418,041 bytes)
+    r040_vo_delay_pdf_nSta23_1Mbps.csv  (518,062 bytes)
+    r040_vo_delay_pdf_nSta24_1Mbps.csv  (530,509 bytes)
+    r040_vo_delay_pdf_nSta25_1Mbps.csv  (534,722 bytes)
+    r040_vo_delay_pdf_nSta26_1Mbps.csv  (528,331 bytes)
+    r040_vo_delay_pdf_nSta27_1Mbps.csv  (652,319 bytes)
+    r040_vo_delay_pdf_nSta28_1Mbps.csv  (593,696 bytes)
+    r040_vo_delay_pdf_nSta29_1Mbps.csv  (642,118 bytes)
+    r040_vo_delay_pdf_nSta2_1Mbps.csv  (1,718 bytes)
+    r040_vo_delay_pdf_nSta30_1Mbps.csv  (807,396 bytes)
+    r040_vo_delay_pdf_nSta31_1Mbps.csv  (631,003 bytes)
+    r040_vo_delay_pdf_nSta32_1Mbps.csv  (955,107 bytes)
+    r040_vo_delay_pdf_nSta33_1Mbps.csv  (748,098 bytes)
+    r040_vo_delay_pdf_nSta34_1Mbps.csv  (1,050,439 bytes)
+    r040_vo_delay_pdf_nSta35_1Mbps.csv  (795,326 bytes)
+    r040_vo_delay_pdf_nSta36_1Mbps.csv  (825,306 bytes)
+    r040_vo_delay_pdf_nSta37_1Mbps.csv  (897,385 bytes)
+    r040_vo_delay_pdf_nSta38_1Mbps.csv  (720,540 bytes)
+    r040_vo_delay_pdf_nSta39_1Mbps.csv  (593,863 bytes)
+    r040_vo_delay_pdf_nSta3_1Mbps.csv  (2,386 bytes)
+    r040_vo_delay_pdf_nSta40_1Mbps.csv  (1,015,908 bytes)
+    r040_vo_delay_pdf_nSta41_1Mbps.csv  (672,377 bytes)
+    r040_vo_delay_pdf_nSta42_1Mbps.csv  (858,230 bytes)
+    r040_vo_delay_pdf_nSta43_1Mbps.csv  (798,197 bytes)
+    r040_vo_delay_pdf_nSta44_1Mbps.csv  (626,501 bytes)
+    r040_vo_delay_pdf_nSta45_1Mbps.csv  (831,127 bytes)
+    r040_vo_delay_pdf_nSta46_1Mbps.csv  (824,769 bytes)
+    r040_vo_delay_pdf_nSta47_1Mbps.csv  (809,404 bytes)
+    r040_vo_delay_pdf_nSta48_1Mbps.csv  (656,130 bytes)
+    r040_vo_delay_pdf_nSta49_1Mbps.csv  (708,741 bytes)
+    r040_vo_delay_pdf_nSta4_1Mbps.csv  (8,725 bytes)
+    r040_vo_delay_pdf_nSta50_1Mbps.csv  (822,007 bytes)
+    r040_vo_delay_pdf_nSta5_1Mbps.csv  (4,460 bytes)
+    r040_vo_delay_pdf_nSta6_1Mbps.csv  (13,782 bytes)
+    r040_vo_delay_pdf_nSta7_1Mbps.csv  (14,028 bytes)
+    r040_vo_delay_pdf_nSta8_1Mbps.csv  (18,208 bytes)
+    r040_vo_delay_pdf_nSta9_1Mbps.csv  (24,538 bytes)
+    r060_vo_delay_pdf_nSta10_1Mbps.csv  (30,646 bytes)
+    r060_vo_delay_pdf_nSta11_1Mbps.csv  (26,126 bytes)
+    r060_vo_delay_pdf_nSta12_1Mbps.csv  (46,985 bytes)
+    r060_vo_delay_pdf_nSta13_1Mbps.csv  (51,817 bytes)
+    r060_vo_delay_pdf_nSta14_1Mbps.csv  (61,059 bytes)
+    r060_vo_delay_pdf_nSta15_1Mbps.csv  (69,017 bytes)
+    r060_vo_delay_pdf_nSta16_1Mbps.csv  (112,961 bytes)
+    r060_vo_delay_pdf_nSta17_1Mbps.csv  (180,924 bytes)
+    r060_vo_delay_pdf_nSta18_1Mbps.csv  (224,925 bytes)
+    r060_vo_delay_pdf_nSta19_1Mbps.csv  (264,033 bytes)
+    r060_vo_delay_pdf_nSta20_1Mbps.csv  (328,097 bytes)
+    r060_vo_delay_pdf_nSta21_1Mbps.csv  (376,532 bytes)
+    r060_vo_delay_pdf_nSta22_1Mbps.csv  (426,255 bytes)
+    r060_vo_delay_pdf_nSta23_1Mbps.csv  (457,464 bytes)
+    r060_vo_delay_pdf_nSta24_1Mbps.csv  (521,787 bytes)
+    r060_vo_delay_pdf_nSta25_1Mbps.csv  (564,044 bytes)
+    r060_vo_delay_pdf_nSta26_1Mbps.csv  (600,000 bytes)
+    r060_vo_delay_pdf_nSta27_1Mbps.csv  (599,508 bytes)
+    r060_vo_delay_pdf_nSta28_1Mbps.csv  (703,448 bytes)
+    r060_vo_delay_pdf_nSta29_1Mbps.csv  (580,920 bytes)
+    r060_vo_delay_pdf_nSta2_1Mbps.csv  (1,718 bytes)
+    r060_vo_delay_pdf_nSta30_1Mbps.csv  (891,855 bytes)
+    r060_vo_delay_pdf_nSta31_1Mbps.csv  (774,013 bytes)
+    r060_vo_delay_pdf_nSta32_1Mbps.csv  (922,193 bytes)
+    r060_vo_delay_pdf_nSta33_1Mbps.csv  (948,945 bytes)
+    r060_vo_delay_pdf_nSta34_1Mbps.csv  (757,706 bytes)
+    r060_vo_delay_pdf_nSta35_1Mbps.csv  (949,792 bytes)
+    r060_vo_delay_pdf_nSta36_1Mbps.csv  (716,789 bytes)
+    r060_vo_delay_pdf_nSta37_1Mbps.csv  (787,623 bytes)
+    r060_vo_delay_pdf_nSta38_1Mbps.csv  (821,115 bytes)
+    r060_vo_delay_pdf_nSta39_1Mbps.csv  (663,895 bytes)
+    r060_vo_delay_pdf_nSta3_1Mbps.csv  (2,386 bytes)
+    r060_vo_delay_pdf_nSta40_1Mbps.csv  (708,031 bytes)
+    r060_vo_delay_pdf_nSta41_1Mbps.csv  (971,139 bytes)
+    r060_vo_delay_pdf_nSta42_1Mbps.csv  (1,030,547 bytes)
+    r060_vo_delay_pdf_nSta43_1Mbps.csv  (1,010,334 bytes)
+    r060_vo_delay_pdf_nSta44_1Mbps.csv  (893,438 bytes)
+    r060_vo_delay_pdf_nSta45_1Mbps.csv  (717,250 bytes)
+    r060_vo_delay_pdf_nSta46_1Mbps.csv  (888,398 bytes)
+    r060_vo_delay_pdf_nSta47_1Mbps.csv  (1,045,528 bytes)
+    r060_vo_delay_pdf_nSta48_1Mbps.csv  (952,075 bytes)
+    r060_vo_delay_pdf_nSta49_1Mbps.csv  (820,287 bytes)
+    r060_vo_delay_pdf_nSta4_1Mbps.csv  (8,349 bytes)
+    r060_vo_delay_pdf_nSta50_1Mbps.csv  (773,495 bytes)
+    r060_vo_delay_pdf_nSta5_1Mbps.csv  (4,460 bytes)
+    r060_vo_delay_pdf_nSta6_1Mbps.csv  (13,677 bytes)
+    r060_vo_delay_pdf_nSta7_1Mbps.csv  (15,014 bytes)
+    r060_vo_delay_pdf_nSta8_1Mbps.csv  (18,350 bytes)
+    r060_vo_delay_pdf_nSta9_1Mbps.csv  (26,258 bytes)
+    r080_vo_delay_pdf_nSta10_1Mbps.csv  (31,422 bytes)
+    r080_vo_delay_pdf_nSta11_1Mbps.csv  (27,842 bytes)
+    r080_vo_delay_pdf_nSta12_1Mbps.csv  (47,944 bytes)
+    r080_vo_delay_pdf_nSta13_1Mbps.csv  (52,228 bytes)
+    r080_vo_delay_pdf_nSta14_1Mbps.csv  (62,743 bytes)
+    r080_vo_delay_pdf_nSta15_1Mbps.csv  (70,611 bytes)
+    r080_vo_delay_pdf_nSta16_1Mbps.csv  (123,094 bytes)
+    r080_vo_delay_pdf_nSta17_1Mbps.csv  (186,865 bytes)
+    r080_vo_delay_pdf_nSta18_1Mbps.csv  (232,792 bytes)
+    r080_vo_delay_pdf_nSta19_1Mbps.csv  (271,387 bytes)
+    r080_vo_delay_pdf_nSta20_1Mbps.csv  (334,847 bytes)
+    r080_vo_delay_pdf_nSta21_1Mbps.csv  (374,641 bytes)
+    r080_vo_delay_pdf_nSta22_1Mbps.csv  (407,892 bytes)
+    r080_vo_delay_pdf_nSta23_1Mbps.csv  (489,193 bytes)
+    r080_vo_delay_pdf_nSta24_1Mbps.csv  (497,735 bytes)
+    r080_vo_delay_pdf_nSta25_1Mbps.csv  (574,126 bytes)
+    r080_vo_delay_pdf_nSta26_1Mbps.csv  (583,727 bytes)
+    r080_vo_delay_pdf_nSta27_1Mbps.csv  (613,111 bytes)
+    r080_vo_delay_pdf_nSta28_1Mbps.csv  (722,132 bytes)
+    r080_vo_delay_pdf_nSta29_1Mbps.csv  (634,269 bytes)
+    r080_vo_delay_pdf_nSta2_1Mbps.csv  (1,718 bytes)
+    r080_vo_delay_pdf_nSta30_1Mbps.csv  (769,519 bytes)
+    r080_vo_delay_pdf_nSta31_1Mbps.csv  (875,149 bytes)
+    r080_vo_delay_pdf_nSta32_1Mbps.csv  (1,150,342 bytes)
+    r080_vo_delay_pdf_nSta33_1Mbps.csv  (957,197 bytes)
+    r080_vo_delay_pdf_nSta34_1Mbps.csv  (674,465 bytes)
+    r080_vo_delay_pdf_nSta35_1Mbps.csv  (1,012,603 bytes)
+    r080_vo_delay_pdf_nSta36_1Mbps.csv  (718,218 bytes)
+    r080_vo_delay_pdf_nSta37_1Mbps.csv  (817,610 bytes)
+    r080_vo_delay_pdf_nSta38_1Mbps.csv  (790,366 bytes)
+    r080_vo_delay_pdf_nSta39_1Mbps.csv  (828,178 bytes)
+    r080_vo_delay_pdf_nSta3_1Mbps.csv  (2,386 bytes)
+    r080_vo_delay_pdf_nSta40_1Mbps.csv  (698,932 bytes)
+    r080_vo_delay_pdf_nSta41_1Mbps.csv  (795,469 bytes)
+    r080_vo_delay_pdf_nSta42_1Mbps.csv  (667,630 bytes)
+    r080_vo_delay_pdf_nSta43_1Mbps.csv  (979,360 bytes)
+    r080_vo_delay_pdf_nSta44_1Mbps.csv  (987,214 bytes)
+    r080_vo_delay_pdf_nSta45_1Mbps.csv  (1,037,272 bytes)
+    r080_vo_delay_pdf_nSta46_1Mbps.csv  (1,077,008 bytes)
+    r080_vo_delay_pdf_nSta47_1Mbps.csv  (1,019,771 bytes)
+    r080_vo_delay_pdf_nSta48_1Mbps.csv  (827,916 bytes)
+    r080_vo_delay_pdf_nSta49_1Mbps.csv  (727,420 bytes)
+    r080_vo_delay_pdf_nSta4_1Mbps.csv  (9,503 bytes)
+    r080_vo_delay_pdf_nSta50_1Mbps.csv  (746,927 bytes)
+    r080_vo_delay_pdf_nSta5_1Mbps.csv  (4,504 bytes)
+    r080_vo_delay_pdf_nSta6_1Mbps.csv  (13,680 bytes)
+    r080_vo_delay_pdf_nSta7_1Mbps.csv  (14,724 bytes)
+    r080_vo_delay_pdf_nSta8_1Mbps.csv  (18,680 bytes)
+    r080_vo_delay_pdf_nSta9_1Mbps.csv  (26,314 bytes)
+    r100_vo_delay_pdf_nSta10_1Mbps.csv  (31,769 bytes)
+    r100_vo_delay_pdf_nSta11_1Mbps.csv  (31,380 bytes)
+    r100_vo_delay_pdf_nSta12_1Mbps.csv  (48,675 bytes)
+    r100_vo_delay_pdf_nSta13_1Mbps.csv  (52,590 bytes)
+    r100_vo_delay_pdf_nSta14_1Mbps.csv  (63,695 bytes)
+    r100_vo_delay_pdf_nSta15_1Mbps.csv  (72,095 bytes)
+    r100_vo_delay_pdf_nSta16_1Mbps.csv  (134,198 bytes)
+    r100_vo_delay_pdf_nSta17_1Mbps.csv  (197,610 bytes)
+    r100_vo_delay_pdf_nSta18_1Mbps.csv  (237,838 bytes)
+    r100_vo_delay_pdf_nSta19_1Mbps.csv  (278,998 bytes)
+    r100_vo_delay_pdf_nSta20_1Mbps.csv  (355,610 bytes)
+    r100_vo_delay_pdf_nSta21_1Mbps.csv  (365,900 bytes)
+    r100_vo_delay_pdf_nSta22_1Mbps.csv  (469,439 bytes)
+    r100_vo_delay_pdf_nSta23_1Mbps.csv  (556,151 bytes)
+    r100_vo_delay_pdf_nSta24_1Mbps.csv  (522,317 bytes)
+    r100_vo_delay_pdf_nSta25_1Mbps.csv  (565,733 bytes)
+    r100_vo_delay_pdf_nSta26_1Mbps.csv  (607,822 bytes)
+    r100_vo_delay_pdf_nSta27_1Mbps.csv  (691,660 bytes)
+    r100_vo_delay_pdf_nSta28_1Mbps.csv  (645,389 bytes)
+    r100_vo_delay_pdf_nSta29_1Mbps.csv  (713,274 bytes)
+    r100_vo_delay_pdf_nSta2_1Mbps.csv  (1,719 bytes)
+    r100_vo_delay_pdf_nSta30_1Mbps.csv  (673,037 bytes)
+    r100_vo_delay_pdf_nSta31_1Mbps.csv  (824,437 bytes)
+    r100_vo_delay_pdf_nSta32_1Mbps.csv  (821,399 bytes)
+    r100_vo_delay_pdf_nSta33_1Mbps.csv  (694,044 bytes)
+    r100_vo_delay_pdf_nSta34_1Mbps.csv  (947,665 bytes)
+    r100_vo_delay_pdf_nSta35_1Mbps.csv  (950,763 bytes)
+    r100_vo_delay_pdf_nSta36_1Mbps.csv  (804,531 bytes)
+    r100_vo_delay_pdf_nSta37_1Mbps.csv  (893,523 bytes)
+    r100_vo_delay_pdf_nSta38_1Mbps.csv  (803,849 bytes)
+    r100_vo_delay_pdf_nSta39_1Mbps.csv  (701,058 bytes)
+    r100_vo_delay_pdf_nSta3_1Mbps.csv  (2,386 bytes)
+    r100_vo_delay_pdf_nSta40_1Mbps.csv  (829,862 bytes)
+    r100_vo_delay_pdf_nSta41_1Mbps.csv  (1,017,279 bytes)
+    r100_vo_delay_pdf_nSta42_1Mbps.csv  (822,951 bytes)
+    r100_vo_delay_pdf_nSta43_1Mbps.csv  (774,861 bytes)
+    r100_vo_delay_pdf_nSta44_1Mbps.csv  (660,820 bytes)
+    r100_vo_delay_pdf_nSta45_1Mbps.csv  (1,004,666 bytes)
+    r100_vo_delay_pdf_nSta46_1Mbps.csv  (908,831 bytes)
+    r100_vo_delay_pdf_nSta47_1Mbps.csv  (750,110 bytes)
+    r100_vo_delay_pdf_nSta48_1Mbps.csv  (759,880 bytes)
+    r100_vo_delay_pdf_nSta49_1Mbps.csv  (845,829 bytes)
+    r100_vo_delay_pdf_nSta4_1Mbps.csv  (9,501 bytes)
+    r100_vo_delay_pdf_nSta50_1Mbps.csv  (931,273 bytes)
+    r100_vo_delay_pdf_nSta5_1Mbps.csv  (4,539 bytes)
+    r100_vo_delay_pdf_nSta6_1Mbps.csv  (14,467 bytes)
+    r100_vo_delay_pdf_nSta7_1Mbps.csv  (15,242 bytes)
+    r100_vo_delay_pdf_nSta8_1Mbps.csv  (18,820 bytes)
+    r100_vo_delay_pdf_nSta9_1Mbps.csv  (26,966 bytes)
 
   Plot files:
-    vo_delay_probability_nSta10_0.5Mbps.pdf  (34,448 bytes)
-    vo_delay_probability_nSta12_0.5Mbps.pdf  (35,423 bytes)
-    vo_delay_probability_nSta14_0.5Mbps.pdf  (41,262 bytes)
-    vo_delay_probability_nSta16_0.5Mbps.pdf  (36,189 bytes)
-    vo_delay_probability_nSta18_0.5Mbps.pdf  (42,919 bytes)
-    vo_delay_probability_nSta20_0.5Mbps.pdf  (40,891 bytes)
-    vo_delay_probability_nSta22_0.5Mbps.pdf  (43,371 bytes)
-    vo_delay_probability_nSta24_0.5Mbps.pdf  (52,215 bytes)
-    vo_delay_probability_nSta26_0.5Mbps.pdf  (59,755 bytes)
-    vo_delay_probability_nSta28_0.5Mbps.pdf  (50,849 bytes)
-    vo_delay_probability_nSta2_0.5Mbps.pdf  (29,878 bytes)
-    vo_delay_probability_nSta30_0.5Mbps.pdf  (56,199 bytes)
-    vo_delay_probability_nSta32_0.5Mbps.pdf  (70,305 bytes)
-    vo_delay_probability_nSta34_0.5Mbps.pdf  (232,808 bytes)
-    vo_delay_probability_nSta36_0.5Mbps.pdf  (360,787 bytes)
-    vo_delay_probability_nSta38_0.5Mbps.pdf  (400,850 bytes)
-    vo_delay_probability_nSta40_0.5Mbps.pdf  (408,295 bytes)
-    vo_delay_probability_nSta42_0.5Mbps.pdf  (400,388 bytes)
-    vo_delay_probability_nSta44_0.5Mbps.pdf  (409,206 bytes)
-    vo_delay_probability_nSta46_0.5Mbps.pdf  (412,395 bytes)
-    vo_delay_probability_nSta48_0.5Mbps.pdf  (375,399 bytes)
-    vo_delay_probability_nSta4_0.5Mbps.pdf  (31,023 bytes)
-    vo_delay_probability_nSta50_0.5Mbps.pdf  (396,993 bytes)
-    vo_delay_probability_nSta6_0.5Mbps.pdf  (30,820 bytes)
-    vo_delay_probability_nSta8_0.5Mbps.pdf  (33,077 bytes)
+    vo_delay_probability_nSta10_1Mbps.pdf  (61,953 bytes)
+    vo_delay_probability_nSta11_1Mbps.pdf  (64,894 bytes)
+    vo_delay_probability_nSta12_1Mbps.pdf  (71,908 bytes)
+    vo_delay_probability_nSta13_1Mbps.pdf  (80,161 bytes)
+    vo_delay_probability_nSta14_1Mbps.pdf  (95,107 bytes)
+    vo_delay_probability_nSta15_1Mbps.pdf  (96,179 bytes)
+    vo_delay_probability_nSta16_1Mbps.pdf  (164,785 bytes)
+    vo_delay_probability_nSta17_1Mbps.pdf  (357,907 bytes)
+    vo_delay_probability_nSta18_1Mbps.pdf  (427,360 bytes)
+    vo_delay_probability_nSta19_1Mbps.pdf  (485,932 bytes)
+    vo_delay_probability_nSta20_1Mbps.pdf  (561,387 bytes)
+    vo_delay_probability_nSta21_1Mbps.pdf  (598,239 bytes)
+    vo_delay_probability_nSta22_1Mbps.pdf  (663,792 bytes)
+    vo_delay_probability_nSta23_1Mbps.pdf  (788,754 bytes)
+    vo_delay_probability_nSta24_1Mbps.pdf  (804,514 bytes)
+    vo_delay_probability_nSta25_1Mbps.pdf  (864,728 bytes)
+    vo_delay_probability_nSta26_1Mbps.pdf  (852,628 bytes)
+    vo_delay_probability_nSta27_1Mbps.pdf  (952,626 bytes)
+    vo_delay_probability_nSta28_1Mbps.pdf  (938,766 bytes)
+    vo_delay_probability_nSta29_1Mbps.pdf  (978,468 bytes)
+    vo_delay_probability_nSta2_1Mbps.pdf  (41,807 bytes)
+    vo_delay_probability_nSta30_1Mbps.pdf  (1,095,635 bytes)
+    vo_delay_probability_nSta31_1Mbps.pdf  (1,104,094 bytes)
+    vo_delay_probability_nSta32_1Mbps.pdf  (1,315,499 bytes)
+    vo_delay_probability_nSta33_1Mbps.pdf  (978,514 bytes)
+    vo_delay_probability_nSta34_1Mbps.pdf  (1,215,145 bytes)
+    vo_delay_probability_nSta35_1Mbps.pdf  (1,275,662 bytes)
+    vo_delay_probability_nSta36_1Mbps.pdf  (1,114,453 bytes)
+    vo_delay_probability_nSta37_1Mbps.pdf  (1,175,282 bytes)
+    vo_delay_probability_nSta38_1Mbps.pdf  (1,102,353 bytes)
+    vo_delay_probability_nSta39_1Mbps.pdf  (1,037,504 bytes)
+    vo_delay_probability_nSta3_1Mbps.pdf  (43,135 bytes)
+    vo_delay_probability_nSta40_1Mbps.pdf  (1,276,687 bytes)
+    vo_delay_probability_nSta41_1Mbps.pdf  (1,266,371 bytes)
+    vo_delay_probability_nSta42_1Mbps.pdf  (1,132,296 bytes)
+    vo_delay_probability_nSta43_1Mbps.pdf  (1,176,491 bytes)
+    vo_delay_probability_nSta44_1Mbps.pdf  (1,276,892 bytes)
+    vo_delay_probability_nSta45_1Mbps.pdf  (1,349,698 bytes)
+    vo_delay_probability_nSta46_1Mbps.pdf  (1,279,050 bytes)
+    vo_delay_probability_nSta47_1Mbps.pdf  (1,246,117 bytes)
+    vo_delay_probability_nSta48_1Mbps.pdf  (1,124,400 bytes)
+    vo_delay_probability_nSta49_1Mbps.pdf  (1,140,969 bytes)
+    vo_delay_probability_nSta4_1Mbps.pdf  (44,785 bytes)
+    vo_delay_probability_nSta50_1Mbps.pdf  (1,185,358 bytes)
+    vo_delay_probability_nSta5_1Mbps.pdf  (44,867 bytes)
+    vo_delay_probability_nSta6_1Mbps.pdf  (50,061 bytes)
+    vo_delay_probability_nSta7_1Mbps.pdf  (53,225 bytes)
+    vo_delay_probability_nSta8_1Mbps.pdf  (52,975 bytes)
+    vo_delay_probability_nSta9_1Mbps.pdf  (58,772 bytes)
+    vo_packet_loss_vs_nSta_1Mbps.pdf  (32,458 bytes)
+    vo_pedca_tx_ratio_vs_nSta_1Mbps.pdf  (33,836 bytes)
 
   Log files:
-    sim_log_nSta10_0.5Mbps.txt  (9,117 bytes)
-    sim_log_nSta12_0.5Mbps.txt  (9,115 bytes)
-    sim_log_nSta14_0.5Mbps.txt  (9,127 bytes)
-    sim_log_nSta16_0.5Mbps.txt  (9,206 bytes)
-    sim_log_nSta18_0.5Mbps.txt  (7,600 bytes)
-    sim_log_nSta20_0.5Mbps.txt  (9,444 bytes)
-    sim_log_nSta22_0.5Mbps.txt  (9,591 bytes)
-    sim_log_nSta24_0.5Mbps.txt  (9,601 bytes)
-    sim_log_nSta26_0.5Mbps.txt  (9,597 bytes)
-    sim_log_nSta28_0.5Mbps.txt  (9,608 bytes)
-    sim_log_nSta2_0.5Mbps.txt  (8,755 bytes)
-    sim_log_nSta30_0.5Mbps.txt  (9,629 bytes)
-    sim_log_nSta32_0.5Mbps.txt  (9,663 bytes)
-    sim_log_nSta34_0.5Mbps.txt  (9,845 bytes)
-    sim_log_nSta36_0.5Mbps.txt  (10,176 bytes)
-    sim_log_nSta38_0.5Mbps.txt  (10,214 bytes)
-    sim_log_nSta40_0.5Mbps.txt  (10,148 bytes)
-    sim_log_nSta42_0.5Mbps.txt  (10,144 bytes)
-    sim_log_nSta44_0.5Mbps.txt  (10,178 bytes)
-    sim_log_nSta46_0.5Mbps.txt  (10,196 bytes)
-    sim_log_nSta48_0.5Mbps.txt  (10,202 bytes)
-    sim_log_nSta4_0.5Mbps.txt  (7,408 bytes)
-    sim_log_nSta50_0.5Mbps.txt  (10,231 bytes)
-    sim_log_nSta6_0.5Mbps.txt  (8,811 bytes)
-    sim_log_nSta8_0.5Mbps.txt  (7,411 bytes)
+    sim_log_nSta10_1Mbps.txt  (9,476 bytes)
+    sim_log_nSta11_1Mbps.txt  (7,860 bytes)
+    sim_log_nSta12_1Mbps.txt  (9,626 bytes)
+    sim_log_nSta13_1Mbps.txt  (9,781 bytes)
+    sim_log_nSta14_1Mbps.txt  (9,852 bytes)
+    sim_log_nSta15_1Mbps.txt  (9,935 bytes)
+    sim_log_nSta16_1Mbps.txt  (9,958 bytes)
+    sim_log_nSta17_1Mbps.txt  (9,974 bytes)
+    sim_log_nSta18_1Mbps.txt  (10,158 bytes)
+    sim_log_nSta19_1Mbps.txt  (10,362 bytes)
+    sim_log_nSta20_1Mbps.txt  (10,317 bytes)
+    sim_log_nSta21_1Mbps.txt  (10,367 bytes)
+    sim_log_nSta22_1Mbps.txt  (10,343 bytes)
+    sim_log_nSta23_1Mbps.txt  (10,346 bytes)
+    sim_log_nSta24_1Mbps.txt  (10,351 bytes)
+    sim_log_nSta25_1Mbps.txt  (10,359 bytes)
+    sim_log_nSta26_1Mbps.txt  (10,392 bytes)
+    sim_log_nSta27_1Mbps.txt  (10,350 bytes)
+    sim_log_nSta28_1Mbps.txt  (10,369 bytes)
+    sim_log_nSta29_1Mbps.txt  (10,350 bytes)
+    sim_log_nSta2_1Mbps.txt  (9,432 bytes)
+    sim_log_nSta30_1Mbps.txt  (10,380 bytes)
+    sim_log_nSta31_1Mbps.txt  (10,406 bytes)
+    sim_log_nSta32_1Mbps.txt  (10,443 bytes)
+    sim_log_nSta33_1Mbps.txt  (10,478 bytes)
+    sim_log_nSta34_1Mbps.txt  (10,479 bytes)
+    sim_log_nSta35_1Mbps.txt  (10,480 bytes)
+    sim_log_nSta36_1Mbps.txt  (10,415 bytes)
+    sim_log_nSta37_1Mbps.txt  (10,444 bytes)
+    sim_log_nSta38_1Mbps.txt  (10,413 bytes)
+    sim_log_nSta39_1Mbps.txt  (10,384 bytes)
+    sim_log_nSta3_1Mbps.txt  (7,714 bytes)
+    sim_log_nSta40_1Mbps.txt  (10,505 bytes)
+    sim_log_nSta41_1Mbps.txt  (10,503 bytes)
+    sim_log_nSta42_1Mbps.txt  (10,476 bytes)
+    sim_log_nSta43_1Mbps.txt  (10,452 bytes)
+    sim_log_nSta44_1Mbps.txt  (10,557 bytes)
+    sim_log_nSta45_1Mbps.txt  (10,507 bytes)
+    sim_log_nSta46_1Mbps.txt  (10,508 bytes)
+    sim_log_nSta47_1Mbps.txt  (10,543 bytes)
+    sim_log_nSta48_1Mbps.txt  (10,451 bytes)
+    sim_log_nSta49_1Mbps.txt  (10,385 bytes)
+    sim_log_nSta4_1Mbps.txt  (7,711 bytes)
+    sim_log_nSta50_1Mbps.txt  (10,502 bytes)
+    sim_log_nSta5_1Mbps.txt  (7,762 bytes)
+    sim_log_nSta6_1Mbps.txt  (9,450 bytes)
+    sim_log_nSta7_1Mbps.txt  (9,525 bytes)
+    sim_log_nSta8_1Mbps.txt  (7,737 bytes)
+    sim_log_nSta9_1Mbps.txt  (9,433 bytes)
 
   Statistics comparison:
-    ratio_sweep_statistics_0.5Mbps.txt  (138,056 bytes)
+    ratio_sweep_statistics_1Mbps.txt  (297,551 bytes)
 ════════════════════════════════════════════════════════════
 

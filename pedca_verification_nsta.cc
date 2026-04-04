@@ -18,6 +18,7 @@
 #include "ns3/mobility-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/wifi-tx-stats-helper.h"
+#include "ns3/qos-frame-exchange-manager.h"
 
 #include <iostream>
 #include <vector>
@@ -33,30 +34,7 @@ static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
 
-static std::vector<uint32_t> g_pedcaTxCount;
-static std::vector<uint32_t> g_edcaTxCount;
-static std::vector<uint32_t> g_pedcaAttemptCount;
 
-void PedcaTxTrace(uint32_t staId, Ptr<const Packet> packet)
-{
-    if (staId < g_pedcaTxCount.size()) {
-        g_pedcaTxCount[staId]++;
-    }
-}
-
-void EdcaTxTrace(uint32_t staId, Ptr<const Packet> packet)
-{
-    if (staId < g_edcaTxCount.size()) {
-        g_edcaTxCount[staId]++;
-    }
-}
-
-void PedcaAttemptTrace(uint32_t staId, Ptr<const Packet> packet)
-{
-    if (staId < g_pedcaAttemptCount.size()) {
-        g_pedcaAttemptCount[staId]++;
-    }
-}
 
 void ApPhyStateTrace(std::string context, Time start, Time duration, ns3::WifiPhyState state)
 {
@@ -134,9 +112,7 @@ int main(int argc, char* argv[])
   g_warmupTime = warmupTime;
   g_simTime = simTime;
   
-  g_pedcaTxCount.assign(nSta, 0);
-  g_edcaTxCount.assign(nSta, 0);
-  g_pedcaAttemptCount.assign(nSta, 0);
+
   
   NodeContainer wifiStaNodes;
   wifiStaNodes.Create(nSta);
@@ -253,15 +229,7 @@ int main(int argc, char* argv[])
   std::string apPhyStatePath = "/NodeList/" + std::to_string(wifiApNode.Get(0)->GetId()) + "/DeviceList/*/$ns3::WifiNetDevice/Phy/State/State";
   Config::Connect(apPhyStatePath, MakeCallback(&ApPhyStateTrace));
 
-  for (uint32_t i = 0; i < nSta; ++i)
-  {
-      if (i < nPedcaSta) {
-          std::string pathPrefix = "/NodeList/" + std::to_string(wifiStaNodes.Get(i)->GetId()) + "/DeviceList/*/$ns3::WifiNetDevice/Mac/FrameExchangeManagers/*/$ns3::QosFrameExchangeManager/";
-          Config::ConnectWithoutContext(pathPrefix + "PedcaTx", MakeBoundCallback(&PedcaTxTrace, i));
-          Config::ConnectWithoutContext(pathPrefix + "EdcaTx", MakeBoundCallback(&EdcaTxTrace, i));
-          Config::ConnectWithoutContext(pathPrefix + "PedcaAttempt", MakeBoundCallback(&PedcaAttemptTrace, i));
-      }
-  }
+
 
   Simulator::Stop(Seconds(simTime + 1.0));
   Simulator::Run();
@@ -270,37 +238,100 @@ int main(int argc, char* argv[])
   double duration = simTime - warmupTime;
   if (duration <= 0) duration = 1.0;
 
-  double avgPedcaTxRatio = 0.0;
-  double avgPedcaSuccessRate = 0.0;
-  if (nPedcaSta > 0) {
-      double totalRatio = 0.0;
-      double totalSuccessRate = 0.0;
-      uint32_t staWithAttempts = 0;
-      for (uint32_t i = 0; i < nPedcaSta; ++i) {
-          uint32_t edcaTx = g_edcaTxCount[i];
-          uint32_t pedcaTx = g_pedcaTxCount[i];
-          uint32_t pedcaAttempt = g_pedcaAttemptCount[i];
+// ── P-EDCA Detailed Trace ──
+  // Aggregate counters from all P-EDCA STAs' QosFrameExchangeManagers
+  uint32_t totalDsCtsSent = 0, totalStage2Entry = 0, totalStage2TxStart = 0;
+  uint32_t totalPedcaSuccess = 0, totalEdcaVoSuccess = 0;
+  uint32_t totalFailRtsCtsTimeout = 0, totalFailRtsCollision = 0;
+  uint32_t totalFailTimingExpired = 0, totalFailDeferral = 0;
+
+  double totalRatio = 0.0;
+  double totalSuccessRate = 0.0;
+  uint32_t staWithAttempts = 0;
+
+  std::cout << "\n--- Per-STA P-EDCA Detail ---\n";
+  for (uint32_t i = 0; i < nSta; ++i)
+  {
+      Ptr<NetDevice> dev = staDevices.Get(i);
+      Ptr<WifiNetDevice> wifiDev = DynamicCast<WifiNetDevice>(dev);
+      if (!wifiDev) continue;
+      Ptr<WifiMac> mac = wifiDev->GetMac();
+      if (!mac) continue;
+      // Get the FEM for link 0
+      auto fem = mac->GetFrameExchangeManager(0);
+      auto qosFem = DynamicCast<QosFrameExchangeManager>(fem);
+      if (!qosFem) continue;
+
+      uint32_t dscts = qosFem->GetDsCtsCount();
+      uint32_t s2entry = qosFem->GetStage2EntryCount();
+      uint32_t s2tx = qosFem->GetStage2TxStartCount();
+      uint32_t pedcaSucc = qosFem->GetPedcaSuccessCount();
+      uint32_t edcaVoSucc = qosFem->GetEdcaVoSuccessCount();
+      uint32_t failCts = qosFem->GetPedcaFailRtsCtsTimeout();
+      uint32_t failColl = qosFem->GetPedcaFailRtsCollision();
+      uint32_t failExp = qosFem->GetPedcaFailTimingExpired();
+      uint32_t failDef = qosFem->GetPedcaFailDeferral();
+
+      totalDsCtsSent += dscts;
+      totalStage2Entry += s2entry;
+      totalStage2TxStart += s2tx;
+      totalPedcaSuccess += pedcaSucc;
+      totalEdcaVoSuccess += edcaVoSucc;
+      totalFailRtsCtsTimeout += failCts;
+      totalFailRtsCollision += failColl;
+      totalFailTimingExpired += failExp;
+      totalFailDeferral += failDef;
+
+      if (i < nPedcaSta) {
+          uint32_t totalVoTx = pedcaSucc + edcaVoSucc;
           double ratio = 0.0;
-          if (edcaTx > 0) {
-              ratio = (double)pedcaTx / (double)edcaTx;
+          if (totalVoTx > 0) {
+              ratio = (double)pedcaSucc / (double)totalVoTx;
           }
           totalRatio += ratio;
-          if (pedcaAttempt > 0) {
-              totalSuccessRate += (double)pedcaTx / (double)pedcaAttempt;
+          
+          if (dscts > 0) { // Using DS-CTS sent as attempts
+              totalSuccessRate += (double)pedcaSucc / (double)dscts;
               staWithAttempts++;
           }
       }
-      avgPedcaTxRatio = totalRatio / nPedcaSta;
-      if (staWithAttempts > 0) {
-          avgPedcaSuccessRate = totalSuccessRate / staWithAttempts;
+
+      // Per-STA detail (only for P-EDCA STAs that had activity)
+      if (i < nPedcaSta && (dscts > 0 || pedcaSucc > 0 || edcaVoSucc > 0)) {
+          std::cout << "  STA" << i << ": DS-CTS=" << dscts
+                    << " S2Entry=" << s2entry << " S2Tx=" << s2tx
+                    << " PedcaOK=" << pedcaSucc << " EdcaOK=" << edcaVoSucc
+                    << " FailCTS=" << failCts << " FailColl=" << failColl
+                    << " FailExp=" << failExp << " Defer=" << failDef << "\n";
       }
   }
 
-  std::cout << "\n=== WifiTxStatsHelper (MAC-layer) ===\n";
+  double avgPedcaTxRatio = (nPedcaSta > 0) ? (totalRatio / nPedcaSta) : 0.0;
+  double avgPedcaSuccessRate = (staWithAttempts > 0) ? (totalSuccessRate / staWithAttempts) : 0.0;
+  
+  std::cout << "\n=== General Statistics ===\n";
   std::cout << "P-EDCA Ratio: " << pedcaRatio << "\n";
   std::cout << "P-EDCA STAs: " << nPedcaSta << "/" << nSta << "\n";
-  std::cout << "Avg P-EDCA Tx Ratio: " << avgPedcaTxRatio << "\n";
-  std::cout << "Avg P-EDCA Success Rate: " << avgPedcaSuccessRate << "\n";
+  std::cout << "P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): " << (avgPedcaTxRatio * 100.0) << " %\n";
+  std::cout << "Avg P-EDCA Attempt Success Rate: " << (avgPedcaSuccessRate * 100.0) << " %\n";
+  std::cout << "Global P-EDCA Tx Success: " << totalPedcaSuccess << "\n";
+  std::cout << "Global EDCA Tx Success: " << totalEdcaVoSuccess << "\n";
+  std::cout << "Global P-EDCA Attempt (DS-CTS Sent): " << totalDsCtsSent << "\n";
+
+  std::cout << "\n--- P-EDCA Detailed Trace ---\n";
+  std::cout << "Stage 2 Entered: " << totalStage2Entry << "\n";
+  std::cout << "Stage 2 TX Started: " << totalStage2TxStart << "\n";
+  std::cout << "P-EDCA Fail RTS No CTS: " << totalFailRtsCtsTimeout << "\n";
+  std::cout << "P-EDCA Fail RTS Collision: " << totalFailRtsCollision << "\n";
+  std::cout << "P-EDCA Fail Timing Expired: " << totalFailTimingExpired << "\n";
+  std::cout << "P-EDCA Fail Deferral: " << totalFailDeferral << "\n";
+
+  uint32_t totalVoTx = totalPedcaSuccess + totalEdcaVoSuccess;
+  double globalPedcaShare = (totalVoTx > 0) ? ((double)totalPedcaSuccess / totalVoTx * 100.0) : 0.0;
+  double globalEdcaShare = (totalVoTx > 0) ? ((double)totalEdcaVoSuccess / totalVoTx * 100.0) : 0.0;
+  std::cout << "Total VO TX (P-EDCA+EDCA): " << totalVoTx << "\n";
+  std::cout << "Global P-EDCA Share: " << globalPedcaShare << " %\n";
+  std::cout << "Global EDCA Share: " << globalEdcaShare << " %\n";
   
   double totalSimUs = (simTime - warmupTime) * 1000000.0;
   double idleRatio = (totalSimUs > 0) ? (g_apIdleUs / totalSimUs * 100.0) : 0.0;
@@ -401,7 +432,11 @@ int main(int argc, char* argv[])
   }
   std::cout << "\n";
 
+
+  std::cout << "\n";
+
   // VO delay PDF for plotting (x=delay_us, y=pdf_per_us)
+  
   if (voicePdfBinUs == 0) {
     voicePdfBinUs = 50;
   }
@@ -447,6 +482,7 @@ int main(int argc, char* argv[])
     std::cout << "VO Delay PDF CSV save failed: " << voicePdfOutput << "\n";
   }
   std::cout << "\n";
+  
 
   Simulator::Destroy();
   return 0;

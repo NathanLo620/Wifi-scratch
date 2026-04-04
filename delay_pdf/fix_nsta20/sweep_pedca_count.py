@@ -181,13 +181,13 @@ def extract_stats_block(stdout: str) -> str:
     start_idx = None
     end_idx = len(lines)
     for i, line in enumerate(lines):
-        if "WifiTxStatsHelper" in line and start_idx is None:
+        if "=== General Statistics ===" in line and start_idx is None:
             start_idx = i
         if start_idx is not None and "VO Delay PDF" in line:
             end_idx = i
             break
     if start_idx is None:
-        return "  (no WifiTxStatsHelper output found)\n"
+        return "  (no General Statistics output found)\n"
     block = lines[start_idx:end_idx]
     while block and not block[-1].strip():
         block.pop()
@@ -202,9 +202,21 @@ def parse_stats(stdout: str) -> dict:
         "channel_idle_ratio": 0.0,
         "avg_pedca_tx_ratio": 0.0,
         "avg_pedca_success_rate": 0.0,
-        "total_successes": 0,
+        "total_pedca_tx": 0,
+        "total_edca_tx": 0,
+        "total_pedca_attempt": 0,
         "total_failures": 0,
         "total_retransmissions": 0,
+        "total_ds_cts_sent": 0,
+        "total_stage2_entry": 0,
+        "total_stage2_tx": 0,
+        "total_pedca_success": 0,
+        "total_edca_vo_success": 0,
+        "fail_rts_no_cts": 0,
+        "fail_rts_collision": 0,
+        "fail_timing_expired": 0,
+        "fail_deferral": 0,
+        "total_vo_tx": 0,
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
@@ -222,11 +234,20 @@ def parse_stats(stdout: str) -> dict:
         elif s.startswith("Channel Idle Time (AP):"):
             try: result["channel_idle_ratio"] = float(s.split(":")[1].split("%")[0].strip())
             except: pass
-        elif s.startswith("Avg P-EDCA Tx Ratio:"):
-            try: result["avg_pedca_tx_ratio"] = float(s.split("Ratio:")[1].strip())
+        elif s.startswith("P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx):"):
+            try: result["avg_pedca_tx_ratio"] = float(s.split(":")[1].split("%")[0].strip()) / 100.0
             except: pass
-        elif s.startswith("Avg P-EDCA Success Rate:"):
-            try: result["avg_pedca_success_rate"] = float(s.split("Rate:")[1].strip())
+        elif s.startswith("Avg P-EDCA Attempt Success Rate:"):
+            try: result["avg_pedca_success_rate"] = float(s.split(":")[1].split("%")[0].strip()) / 100.0
+            except: pass
+        elif s.startswith("Global P-EDCA Tx Success:"):
+            try: result["total_pedca_tx"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Global EDCA Tx Success:"):
+            try: result["total_edca_tx"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Global P-EDCA Attempt (DS-CTS Sent):"):
+            try: result["total_pedca_attempt"] = float(s.split(":")[1].strip())
             except: pass
         elif s.startswith("Total Successes:"):
             try: result["total_successes"] = float(s.split(":")[1].strip())
@@ -245,6 +266,21 @@ def parse_stats(stdout: str) -> dict:
             current_ac = None
         elif "Failure Reasons" in s:
             section = "reasons"
+        elif "P-EDCA Detailed Trace" in s:
+            section = "pedca_trace"
+        elif section == "pedca_trace" and ":" in s:
+            key, _, val = s.partition(":")
+            key = key.strip()
+            try:
+                num = float(val.strip().split()[0])
+                if key == "Stage 2 Entered": result["total_stage2_entry"] = num
+                elif key == "Stage 2 TX Started": result["total_stage2_tx"] = num
+                elif key == "P-EDCA Fail RTS No CTS": result["fail_rts_no_cts"] = num
+                elif key == "P-EDCA Fail RTS Collision": result["fail_rts_collision"] = num
+                elif key == "P-EDCA Fail Timing Expired": result["fail_timing_expired"] = num
+                elif key == "P-EDCA Fail Deferral": result["fail_deferral"] = num
+                elif key == "Total VO TX (P-EDCA+EDCA)": result["total_vo_tx"] = num
+            except: pass
         elif section == "success" and s.startswith("AC_") and s.endswith(":"):
             current_ac = s.rstrip(":")
             result["per_ac"][current_ac] = {}
@@ -283,9 +319,22 @@ def average_stats(stats_list: list) -> dict:
         "channel_idle_ratio": sum(s.get("channel_idle_ratio", 0.0) for s in stats_list) / n,
         "avg_pedca_tx_ratio": sum(s.get("avg_pedca_tx_ratio", 0.0) for s in stats_list) / n,
         "avg_pedca_success_rate": sum(s.get("avg_pedca_success_rate", 0.0) for s in stats_list) / n,
-        "total_successes": sum(s["total_successes"] for s in stats_list) / n,
-        "total_failures": sum(s["total_failures"] for s in stats_list) / n,
-        "total_retransmissions": sum(s["total_retransmissions"] for s in stats_list) / n,
+        "total_pedca_tx": sum(s.get("total_pedca_tx", 0) for s in stats_list) / n,
+        "total_edca_tx": sum(s.get("total_edca_tx", 0) for s in stats_list) / n,
+        "total_pedca_attempt": sum(s.get("total_pedca_attempt", 0) for s in stats_list) / n,
+        "total_successes": sum(s.get("total_successes", 0) for s in stats_list) / n,
+        "total_failures": sum(s.get("total_failures", 0) for s in stats_list) / n,
+        "total_retransmissions": sum(s.get("total_retransmissions", 0) for s in stats_list) / n,
+        "total_ds_cts_sent": sum(s.get("total_ds_cts_sent", 0) for s in stats_list) / n,
+        "total_stage2_entry": sum(s.get("total_stage2_entry", 0) for s in stats_list) / n,
+        "total_stage2_tx": sum(s.get("total_stage2_tx", 0) for s in stats_list) / n,
+        "total_pedca_success": sum(s.get("total_pedca_success", 0) for s in stats_list) / n,
+        "total_edca_vo_success": sum(s.get("total_edca_vo_success", 0) for s in stats_list) / n,
+        "fail_rts_no_cts": sum(s.get("fail_rts_no_cts", 0) for s in stats_list) / n,
+        "fail_rts_collision": sum(s.get("fail_rts_collision", 0) for s in stats_list) / n,
+        "fail_timing_expired": sum(s.get("fail_timing_expired", 0) for s in stats_list) / n,
+        "fail_deferral": sum(s.get("fail_deferral", 0) for s in stats_list) / n,
+        "total_vo_tx": sum(s.get("total_vo_tx", 0) for s in stats_list) / n,
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
@@ -328,11 +377,17 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
     lines.append(f"=== WifiTxStatsHelper (MAC-layer) [Averaged over {n_runs} runs] ===")
     lines.append(f"P-EDCA Ratio: {avg['pedca_ratio']}")
     lines.append(f"Channel Idle Time (AP): {avg.get('channel_idle_ratio', 0.0):.2f} %")
-    lines.append(f"Avg P-EDCA Tx Ratio: {avg.get('avg_pedca_tx_ratio', 0.0):.6g}")
-    lines.append(f"Avg P-EDCA Success Rate: {avg.get('avg_pedca_success_rate', 0.0):.6g}")
-    lines.append(f"Total Successes:       {avg['total_successes']:.1f}")
-    lines.append(f"Total Failures:        {avg['total_failures']:.1f}")
-    lines.append(f"Total Retransmissions: {avg['total_retransmissions']:.1f}")
+    lines.append(f"P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): {avg.get('avg_pedca_tx_ratio', 0.0) * 100.0:.6g} %")
+    lines.append(f"Avg P-EDCA Attempt Success Rate: {avg.get('avg_pedca_success_rate', 0.0) * 100.0:.6g} %")
+    lines.append(f"Global P-EDCA Tx Success: {avg.get('total_pedca_tx', 0):.1f}")
+    lines.append(f"Global EDCA Tx Success: {avg.get('total_edca_tx', 0):.1f}")
+    lines.append(f"Global P-EDCA Attempt (DS-CTS Sent): {avg.get('total_pedca_attempt', 0):.1f}")
+    if avg.get("total_successes", 0) > 0:
+        lines.append(f"Total Successes:       {avg.get('total_successes', 0):.1f}")
+    if avg.get("total_failures", 0) > 0:
+        lines.append(f"Total Failures:        {avg.get('total_failures', 0):.1f}")
+    if avg.get("total_retransmissions", 0) > 0:
+        lines.append(f"Total Retransmissions: {avg.get('total_retransmissions', 0):.1f}")
     lines.append("")
     lines.append("--- Per-AC Success Statistics ---")
 
@@ -364,6 +419,27 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
         lines.append("--- Failure Reasons by AC ---")
         for reason, count in sorted(avg["failure_reasons"].items()):
             lines.append(f"  {reason}: {count:.1f}")
+
+    lines.append("")
+    lines.append("--- P-EDCA Detailed Trace ---")
+    lines.append(f"DS-CTS Sent: {avg.get('total_pedca_attempt', 0):.1f}")
+    lines.append(f"Stage 2 Entered: {avg.get('total_stage2_entry', 0):.1f}")
+    lines.append(f"Stage 2 TX Started: {avg.get('total_stage2_tx', 0):.1f}")
+    lines.append(f"P-EDCA TX Success: {avg.get('total_pedca_tx', 0):.1f}")
+    lines.append(f"EDCA VO TX Success: {avg.get('total_edca_tx', 0):.1f}")
+    lines.append(f"P-EDCA Fail RTS No CTS: {avg.get('fail_rts_no_cts', 0):.1f}")
+    lines.append(f"P-EDCA Fail RTS Collision: {avg.get('fail_rts_collision', 0):.1f}")
+    lines.append(f"P-EDCA Fail Timing Expired: {avg.get('fail_timing_expired', 0):.1f}")
+    lines.append(f"P-EDCA Fail Deferral: {avg.get('fail_deferral', 0):.1f}")
+    
+    total_vo = avg.get('total_vo_tx', 0)
+    lines.append(f"Total VO TX (P-EDCA+EDCA): {total_vo:.1f}")
+    
+    pedca_ratio = (avg.get('total_pedca_tx', 0) / total_vo * 100.0) if total_vo > 0 else 0.0
+    edca_ratio = (avg.get('total_edca_tx', 0) / total_vo * 100.0) if total_vo > 0 else 0.0
+    
+    lines.append(f"P-EDCA Success Ratio: {pedca_ratio:.4f} %")
+    lines.append(f"EDCA Success Ratio: {edca_ratio:.4f} %")
 
     return "\n".join(lines) + "\n"
 
@@ -578,23 +654,58 @@ def parse_stats_file_for_metric(stats_path: Path, pedca_counts: list,
                 result[current_n_pedca] = float(m2.group(1))
 
         # Avg P-EDCA Tx Ratio
-        elif metric_name == "pedca_tx_ratio" and s.startswith("Avg P-EDCA Tx Ratio:"):
+        # Avg P-EDCA Tx Ratio
+        elif metric_name == "pedca_tx_ratio" and s.startswith("P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx):"):
             try:
-                val = float(s.split("Ratio:")[1].strip())
+                val = float(s.split(":")[1].split("%")[0].strip()) / 100.0
                 result[current_n_pedca] = val
             except:
                 pass
 
         # Avg P-EDCA Success Rate (pedcaTx / pedcaAttempt)
-        elif metric_name == "pedca_success_rate" and s.startswith("Avg P-EDCA Success Rate:"):
+        elif metric_name == "pedca_success_rate" and s.startswith("Avg P-EDCA Attempt Success Rate:"):
             try:
-                val = float(s.split("Rate:")[1].strip())
+                val = float(s.split(":")[1].split("%")[0].strip()) / 100.0
                 result[current_n_pedca] = val
             except:
                 pass
 
+        # Total P-EDCA Tx
+        elif metric_name == "total_pedca_tx" and s.startswith("Global P-EDCA Tx Success:"):
+            try:
+                result[current_n_pedca] = float(s.split(":")[1].strip())
+            except:
+                pass
+
+        # Total EDCA Tx
+        elif metric_name == "total_edca_tx" and s.startswith("Global EDCA Tx Success:"):
+            try:
+                result[current_n_pedca] = float(s.split(":")[1].strip())
+            except:
+                pass
+
+        # Total P-EDCA Attempt
+        elif metric_name == "total_pedca_attempt" and s.startswith("Global P-EDCA Attempt (DS-CTS Sent):"):
+            try:
+                result[current_n_pedca] = float(s.split(":")[1].strip())
+            except:
+                pass
+                
+        elif metric_name == "fail_rts_no_cts" and s.startswith("P-EDCA Fail RTS No CTS:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
+        elif metric_name == "fail_rts_collision" and s.startswith("P-EDCA Fail RTS Collision:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
+        elif metric_name == "fail_timing_expired" and s.startswith("P-EDCA Fail Timing Expired:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
+        elif metric_name == "fail_deferral" and s.startswith("P-EDCA Fail Deferral:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
+
         # Total Successes
-        elif metric_name == "total_successes" and s.startswith("Total Successes:"):
+        elif metric_name == "total_successes" and (s.startswith("Total Successes:") or s.startswith("Total VO TX (P-EDCA+EDCA):")):
             try:
                 result[current_n_pedca] = float(s.split(":")[1].strip())
             except:
@@ -688,38 +799,24 @@ def plot_metric_vs_pedca_count(stats_path: Path, out_path: Path,
 
 def compute_pedca_success_share(stats_path: Path, pedca_counts: list) -> dict:
     """
-    Compute P-EDCA success share:
-    For each nPedca config:
-      pedca_success_share = avg_pedca_tx_ratio * nPedca_successes_estimated
-    
-    Since avg_pedca_tx_ratio = avg(pedcaTx_i / edcaTx_i) over P-EDCA STAs,
-    and we know total successes, we can estimate:
-    
-    More precisely, this is the ratio that the simulation already outputs:
-    avg_pedca_tx_ratio = mean(pedcaTx[i] / edcaTx[i]) for i in P-EDCA STAs
-    
-    This represents: for each P-EDCA STA, what fraction of its successful
-    transmissions used P-EDCA.
+    Compute exact P-EDCA success share:
+      = Total P-EDCA Tx / Total EDCA Tx
+    Using exact counts from the simulation output.
     """
-    pedca_ratio_data = parse_stats_file_for_metric(stats_path, pedca_counts, "pedca_tx_ratio")
-    total_succ_data = parse_stats_file_for_metric(stats_path, pedca_counts, "total_successes")
+    pedca_tx_data = parse_stats_file_for_metric(stats_path, pedca_counts, "total_pedca_tx")
+    edca_tx_data = parse_stats_file_for_metric(stats_path, pedca_counts, "total_edca_tx")
     
     result = {}
     for n_pedca in pedca_counts:
-        if n_pedca in pedca_ratio_data and n_pedca in total_succ_data and n_pedca > 0:
-            # avg_pedca_tx_ratio is already pedcaTx/edcaTx averaged over P-EDCA STAs
-            avg_ratio = pedca_ratio_data[n_pedca]
-            total_succ = total_succ_data[n_pedca]
-            
-            # Estimate total P-EDCA successes:
-            # Each P-EDCA STA's pedcaTx/edcaTx ≈ avg_ratio
-            # Each STA contributes ~total_succ/N_STA successes
-            # So total pedca successes ≈ avg_ratio * n_pedca * (total_succ/N_STA)
-            # Global P-EDCA share = avg_ratio * n_pedca / N_STA
-            pedca_share = avg_ratio * n_pedca / N_STA
-            result[n_pedca] = pedca_share
-        elif n_pedca == 0:
+        if n_pedca == 0:
             result[n_pedca] = 0.0
+        elif n_pedca in pedca_tx_data and n_pedca in edca_tx_data:
+            total_pedca = pedca_tx_data[n_pedca]
+            total_edca = edca_tx_data[n_pedca]
+            if total_edca > 0:
+                result[n_pedca] = total_pedca / total_edca
+            else:
+                result[n_pedca] = 0.0
     
     return result
 
@@ -732,7 +829,7 @@ def plot_pedca_success_share(stats_path: Path, out_path: Path,
                               dpi: int = 200):
     """
     Plot P-EDCA success share vs nPedca:
-    = estimated total P-EDCA successes / total successes
+    = Total P-EDCA Tx / Total EDCA Tx (exact)
     """
     data = compute_pedca_success_share(stats_path, pedca_counts)
     if not data:
@@ -750,9 +847,9 @@ def plot_pedca_success_share(stats_path: Path, out_path: Path,
     ax.fill_between(x_vals, y_vals, alpha=0.1, color="#55A868")
 
     ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
-    ax.set_ylabel("P-EDCA Success Share (estimated)", fontsize=11)
+    ax.set_ylabel("P-EDCA Success Share\n(Total P-EDCA Tx / Total EDCA Tx)", fontsize=11)
     ax.set_title(
-        f"Estimated P-EDCA Success / Total Success  —  nSta={N_STA}, {data_rate}{runs_label}",
+        f"P-EDCA Tx / Total EDCA Tx  —  nSta={N_STA}, {data_rate}{runs_label}",
         fontsize=13, fontweight="bold"
     )
     ax.grid(True, alpha=0.3, linestyle="--")
@@ -765,6 +862,60 @@ def plot_pedca_success_share(stats_path: Path, out_path: Path,
     plt.close(fig)
     return out_path
 
+
+def plot_pedca_failure_breakdown(stats_path: Path, out_path: Path,
+                                 data_rate: str, pedca_counts: list,
+                                 n_runs: int = 1,
+                                 fig_width: float = 12.0,
+                                 fig_height: float = 6.0,
+                                 dpi: int = 200):
+    """
+    Plot stacked bar chart of P-EDCA failure reasons.
+    """
+    fail_rts_no_cts = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_rts_no_cts")
+    fail_rts_coll = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_rts_collision")
+    fail_expired = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_timing_expired")
+    fail_defer = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_deferral")
+    
+    if not fail_expired:
+        return None
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    x_vals = sorted(fail_expired.keys())
+    
+    y_cts = np.array([fail_rts_no_cts.get(x, 0) for x in x_vals])
+    y_coll = np.array([fail_rts_coll.get(x, 0) for x in x_vals])
+    y_exp = np.array([fail_expired.get(x, 0) for x in x_vals])
+    y_def = np.array([fail_defer.get(x, 0) for x in x_vals])
+    
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    bar_width = 0.6
+    ax.bar(x_vals, y_exp, width=bar_width, label="Timing Expired (>77us, Legacy Steal)", color="#d62728")
+    bottom = y_exp
+    ax.bar(x_vals, y_coll, width=bar_width, bottom=bottom, label="RTS Collision (Stage 2)", color="#ff7f0e")
+    bottom += y_coll
+    ax.bar(x_vals, y_cts, width=bar_width, bottom=bottom, label="CTS Timeout (No AP Reply)", color="#1f77b4")
+    bottom += y_cts
+    ax.bar(x_vals, y_def, width=bar_width, bottom=bottom, label="Deferral (Medium Busy)", color="#9467bd")
+
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
+    ax.set_ylabel("Average Failure Count (per simulation)", fontsize=11)
+    ax.set_title(
+        f"P-EDCA Failure Reasons Breakdown  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=13, fontweight="bold"
+    )
+    ax.legend(loc="upper left")
+    ax.grid(True, axis="y", alpha=0.3, linestyle="--")
+    ax.set_xticks(x_vals)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
 
 def plot_combined_metrics(stats_path: Path, out_path: Path,
                            data_rate: str, pedca_counts: list,
@@ -822,9 +973,9 @@ def plot_combined_metrics(stats_path: Path, out_path: Path,
         ax.fill_between(x_vals, y_vals, alpha=0.08, color="#C4A000")
         ax.set_xticks(x_vals)
     ax.set_xlabel("Number of P-EDCA STAs", fontsize=9)
-    ax.set_ylabel("Estimated P-EDCA Success Share", fontsize=9)
+    ax.set_ylabel("P-EDCA Success Share\n(Total P-EDCA Tx / Total EDCA Tx)", fontsize=9)
     ax.set_title(
-        f"Estimated P-EDCA Success / Total Success  —  nSta={N_STA}, {data_rate}{runs_label}",
+        f"P-EDCA Tx / Total EDCA Tx  —  nSta={N_STA}, {data_rate}{runs_label}",
         fontsize=11, fontweight="bold"
     )
     ax.grid(True, alpha=0.3, linestyle="--")
