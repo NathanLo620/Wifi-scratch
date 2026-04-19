@@ -49,7 +49,7 @@ SIM_TIME        = 10.0
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
 MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))
 N_RUNS          = 10
-SIM_BINARY      = "scratch/pedca_verification_nsta.cc"
+SIM_BINARY      = "scratch/pedca_verification_nsta_mod.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths

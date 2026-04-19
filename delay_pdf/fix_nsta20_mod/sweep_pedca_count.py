@@ -49,7 +49,7 @@ SIM_TIME        = 10.0
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
 MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))
 N_RUNS          = 10
-SIM_BINARY      = "scratch/pedca_verification_nsta.cc"
+SIM_BINARY      = "scratch/pedca_verification_nsta_mod.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
@@ -75,6 +75,18 @@ def csv_name(n_pedca: int, data_rate: str, run_idx: int = None) -> str:
         return f"{tag}_vo_delay_pdf_nSta{N_STA}_{data_rate}_run{run_idx}.csv"
     return f"{tag}_vo_delay_pdf_nSta{N_STA}_{data_rate}.csv"
 
+def pedca_sta_csv_name(n_pedca: int, data_rate: str, run_idx: int = None) -> str:
+    tag = count_tag(n_pedca)
+    if run_idx is not None:
+        return f"{tag}_pedca_sta_delay_pdf_nSta{N_STA}_{data_rate}_run{run_idx}.csv"
+    return f"{tag}_pedca_sta_delay_pdf_nSta{N_STA}_{data_rate}.csv"
+
+def legacy_sta_csv_name(n_pedca: int, data_rate: str, run_idx: int = None) -> str:
+    tag = count_tag(n_pedca)
+    if run_idx is not None:
+        return f"{tag}_legacy_sta_delay_pdf_nSta{N_STA}_{data_rate}_run{run_idx}.csv"
+    return f"{tag}_legacy_sta_delay_pdf_nSta{N_STA}_{data_rate}.csv"
+
 def combined_plot_name(n_pedca: int, data_rate: str) -> str:
     return f"vo_delay_probability_pedca{n_pedca}_{data_rate}.pdf"
 
@@ -95,6 +107,14 @@ def run_single_sim(n_pedca: int, data_rate: str,
     csv_path = OUT_DIR / csv_file
     relative_csv = str(csv_path.relative_to(NS3_DIR))
 
+    pedca_csv_file = pedca_sta_csv_name(n_pedca, data_rate, run_idx)
+    pedca_csv_path = OUT_DIR / pedca_csv_file
+    relative_pedca_csv = str(pedca_csv_path.relative_to(NS3_DIR))
+
+    legacy_csv_file = legacy_sta_csv_name(n_pedca, data_rate, run_idx)
+    legacy_csv_path = OUT_DIR / legacy_csv_file
+    relative_legacy_csv = str(legacy_csv_path.relative_to(NS3_DIR))
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     args = (
@@ -104,6 +124,8 @@ def run_single_sim(n_pedca: int, data_rate: str,
         f"--pedcaRatio={ratio} "
         f"--voicePdfBinUs={bin_us} "
         f"--voicePdfOutput={relative_csv} "
+        f"--pedcaStaDelayOutput={relative_pedca_csv} "
+        f"--legacyStaDelayOutput={relative_legacy_csv} "
         f"--RngRun={run_idx + 1}"
     )
     cmd = ["./ns3", "run", f"{SIM_BINARY} {args}"]
@@ -115,6 +137,8 @@ def run_single_sim(n_pedca: int, data_rate: str,
         "run_idx":  run_idx,
         "cmd":      " ".join(cmd),
         "csv_path": None,
+        "pedca_csv_path": None,
+        "legacy_csv_path": None,
         "stdout":   "",
         "stderr":   "",
         "success":  False,
@@ -132,6 +156,10 @@ def run_single_sim(n_pedca: int, data_rate: str,
         if csv_path.exists() and csv_path.stat().st_size > 10:
             result_info["csv_path"] = csv_path
             result_info["success"] = True
+        if pedca_csv_path.exists() and pedca_csv_path.stat().st_size > 10:
+            result_info["pedca_csv_path"] = pedca_csv_path
+        if legacy_csv_path.exists() and legacy_csv_path.stat().st_size > 10:
+            result_info["legacy_csv_path"] = legacy_csv_path
 
     except subprocess.CalledProcessError as e:
         err_out = e.stdout or ""
@@ -191,6 +219,20 @@ def extract_stats_block(stdout: str) -> str:
     block = lines[start_idx:end_idx]
     while block and not block[-1].strip():
         block.pop()
+
+    # Also capture EXTENDED_STATS block
+    ext_start = None
+    ext_end = None
+    for i, line in enumerate(lines):
+        if "EXTENDED_STATS_BEGIN" in line:
+            ext_start = i
+        if "EXTENDED_STATS_END" in line:
+            ext_end = i + 1
+            break
+    if ext_start is not None and ext_end is not None:
+        block.extend([""])
+        block.extend(lines[ext_start:ext_end])
+
     return "\n".join(block) + "\n"
 
 
@@ -220,6 +262,19 @@ def parse_stats(stdout: str) -> dict:
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
+        # Extended stats (from pedca_verification_nsta_mod)
+        "pedca_sta_succ_count": 0,
+        "pedca_sta_fail_count": 0,
+        "pedca_sta_zero_retx": 0,
+        "legacy_sta_succ_count": 0,
+        "legacy_sta_fail_count": 0,
+        "legacy_sta_zero_retx": 0,
+        "pedca_sta_avg_mac_delay": 0.0,
+        "pedca_sta_avg_queue_delay": 0.0,
+        "pedca_sta_avg_access_delay": 0.0,
+        "legacy_sta_avg_mac_delay": 0.0,
+        "legacy_sta_avg_queue_delay": 0.0,
+        "legacy_sta_avg_access_delay": 0.0,
     }
 
     lines = block.splitlines()
@@ -306,6 +361,29 @@ def parse_stats(stdout: str) -> dict:
                 result["failure_reasons"][key] = float(val.strip())
             except: pass
 
+        # Extended stats (machine-parseable block)
+        ext_map = {
+            "PEDCA_STA_SUCC_COUNT": "pedca_sta_succ_count",
+            "PEDCA_STA_FAIL_COUNT": "pedca_sta_fail_count",
+            "PEDCA_STA_ZERO_RETX": "pedca_sta_zero_retx",
+            "LEGACY_STA_SUCC_COUNT": "legacy_sta_succ_count",
+            "LEGACY_STA_FAIL_COUNT": "legacy_sta_fail_count",
+            "LEGACY_STA_ZERO_RETX": "legacy_sta_zero_retx",
+            "PEDCA_STA_AVG_MAC_DELAY": "pedca_sta_avg_mac_delay",
+            "PEDCA_STA_AVG_QUEUE_DELAY": "pedca_sta_avg_queue_delay",
+            "PEDCA_STA_AVG_ACCESS_DELAY": "pedca_sta_avg_access_delay",
+            "LEGACY_STA_AVG_MAC_DELAY": "legacy_sta_avg_mac_delay",
+            "LEGACY_STA_AVG_QUEUE_DELAY": "legacy_sta_avg_queue_delay",
+            "LEGACY_STA_AVG_ACCESS_DELAY": "legacy_sta_avg_access_delay",
+        }
+        for ext_key, result_key in ext_map.items():
+            if s.startswith(ext_key + ":"):
+                try:
+                    result[result_key] = float(s.split(":")[1].strip())
+                except:
+                    pass
+                break
+
     return result
 
 
@@ -338,6 +416,19 @@ def average_stats(stats_list: list) -> dict:
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
+        # Extended stats
+        "pedca_sta_succ_count": sum(s.get("pedca_sta_succ_count", 0) for s in stats_list) / n,
+        "pedca_sta_fail_count": sum(s.get("pedca_sta_fail_count", 0) for s in stats_list) / n,
+        "pedca_sta_zero_retx": sum(s.get("pedca_sta_zero_retx", 0) for s in stats_list) / n,
+        "legacy_sta_succ_count": sum(s.get("legacy_sta_succ_count", 0) for s in stats_list) / n,
+        "legacy_sta_fail_count": sum(s.get("legacy_sta_fail_count", 0) for s in stats_list) / n,
+        "legacy_sta_zero_retx": sum(s.get("legacy_sta_zero_retx", 0) for s in stats_list) / n,
+        "pedca_sta_avg_mac_delay": sum(s.get("pedca_sta_avg_mac_delay", 0) for s in stats_list) / n,
+        "pedca_sta_avg_queue_delay": sum(s.get("pedca_sta_avg_queue_delay", 0) for s in stats_list) / n,
+        "pedca_sta_avg_access_delay": sum(s.get("pedca_sta_avg_access_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_mac_delay": sum(s.get("legacy_sta_avg_mac_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_queue_delay": sum(s.get("legacy_sta_avg_queue_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_access_delay": sum(s.get("legacy_sta_avg_access_delay", 0) for s in stats_list) / n,
     }
 
     all_acs = set()
@@ -441,6 +532,22 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
     lines.append(f"P-EDCA Success Ratio: {pedca_ratio:.4f} %")
     lines.append(f"EDCA Success Ratio: {edca_ratio:.4f} %")
 
+    # Extended stats
+    lines.append("")
+    lines.append("--- Extended P-EDCA vs Legacy Statistics ---")
+    lines.append(f"PEDCA_STA_SUCC_COUNT: {avg.get('pedca_sta_succ_count', 0):.1f}")
+    lines.append(f"PEDCA_STA_FAIL_COUNT: {avg.get('pedca_sta_fail_count', 0):.1f}")
+    lines.append(f"PEDCA_STA_ZERO_RETX: {avg.get('pedca_sta_zero_retx', 0):.1f}")
+    lines.append(f"LEGACY_STA_SUCC_COUNT: {avg.get('legacy_sta_succ_count', 0):.1f}")
+    lines.append(f"LEGACY_STA_FAIL_COUNT: {avg.get('legacy_sta_fail_count', 0):.1f}")
+    lines.append(f"LEGACY_STA_ZERO_RETX: {avg.get('legacy_sta_zero_retx', 0):.1f}")
+    lines.append(f"PEDCA_STA_AVG_MAC_DELAY: {avg.get('pedca_sta_avg_mac_delay', 0):.3f}")
+    lines.append(f"PEDCA_STA_AVG_QUEUE_DELAY: {avg.get('pedca_sta_avg_queue_delay', 0):.3f}")
+    lines.append(f"PEDCA_STA_AVG_ACCESS_DELAY: {avg.get('pedca_sta_avg_access_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_MAC_DELAY: {avg.get('legacy_sta_avg_mac_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_QUEUE_DELAY: {avg.get('legacy_sta_avg_queue_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_ACCESS_DELAY: {avg.get('legacy_sta_avg_access_delay', 0):.3f}")
+
     return "\n".join(lines) + "\n"
 
 
@@ -449,15 +556,22 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
 def aggregate_runs(run_results: list, n_pedca: int,
                    data_rate: str, n_runs: int) -> dict:
     csv_paths = [r["csv_path"] for r in run_results if r["csv_path"]]
+    pedca_csv_paths = [r["pedca_csv_path"] for r in run_results if r.get("pedca_csv_path")]
+    legacy_csv_paths = [r["legacy_csv_path"] for r in run_results if r.get("legacy_csv_path")]
 
     avg_csv = OUT_DIR / csv_name(n_pedca, data_rate)
-    if csv_paths:
-        average_histograms(csv_paths, avg_csv, n_runs)
-        for cp in csv_paths:
-            try:
-                cp.unlink()
-            except OSError:
-                pass
+    avg_pedca_csv = OUT_DIR / pedca_sta_csv_name(n_pedca, data_rate)
+    avg_legacy_csv = OUT_DIR / legacy_sta_csv_name(n_pedca, data_rate)
+
+    for paths, out in [(csv_paths, avg_csv), (pedca_csv_paths, avg_pedca_csv),
+                       (legacy_csv_paths, avg_legacy_csv)]:
+        if paths:
+            average_histograms(paths, out, n_runs)
+            for cp in paths:
+                try:
+                    cp.unlink()
+                except OSError:
+                    pass
 
     stdouts = [r["stdout"] for r in run_results if r["success"]]
     parsed_list = [parse_stats(s) for s in stdouts]
@@ -472,6 +586,8 @@ def aggregate_runs(run_results: list, n_pedca: int,
         "n_pedca":   n_pedca,
         "ratio":     n_pedca / N_STA,
         "csv_path":  avg_csv if csv_paths else None,
+        "pedca_csv_path": avg_pedca_csv if pedca_csv_paths else None,
+        "legacy_csv_path": avg_legacy_csv if legacy_csv_paths else None,
         "stdout":    avg_stdout,
         "elapsed":   total_elapsed,
         "n_success": n_success,
@@ -691,6 +807,12 @@ def parse_stats_file_for_metric(stats_path: Path, pedca_counts: list,
             except:
                 pass
                 
+        elif metric_name == "total_stage2_tx" and s.startswith("Stage 2 TX Started:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
+        elif metric_name == "total_stage2_entry" and s.startswith("Stage 2 Entered:"):
+            try: result[current_n_pedca] = float(s.split(":")[1].strip())
+            except: pass
         elif metric_name == "fail_rts_no_cts" and s.startswith("P-EDCA Fail RTS No CTS:"):
             try: result[current_n_pedca] = float(s.split(":")[1].strip())
             except: pass
@@ -748,6 +870,25 @@ def parse_stats_file_for_metric(stats_path: Path, pedca_counts: list,
                     result[current_n_pedca] = float(m2.group(1))
 
             elif metric_name == "vo_successes" and s.startswith("Successes:"):
+                try:
+                    result[current_n_pedca] = float(s.split(":")[1].strip())
+                except:
+                    pass
+
+        # Extended stats (machine-parseable keys)
+        ext_metrics = {
+            "pedca_sta_succ_count": "PEDCA_STA_SUCC_COUNT",
+            "pedca_sta_fail_count": "PEDCA_STA_FAIL_COUNT",
+            "pedca_sta_zero_retx": "PEDCA_STA_ZERO_RETX",
+            "legacy_sta_succ_count": "LEGACY_STA_SUCC_COUNT",
+            "legacy_sta_fail_count": "LEGACY_STA_FAIL_COUNT",
+            "legacy_sta_zero_retx": "LEGACY_STA_ZERO_RETX",
+            "pedca_sta_avg_mac_delay": "PEDCA_STA_AVG_MAC_DELAY",
+            "legacy_sta_avg_mac_delay": "LEGACY_STA_AVG_MAC_DELAY",
+        }
+        if metric_name in ext_metrics:
+            prefix = ext_metrics[metric_name] + ":"
+            if s.startswith(prefix):
                 try:
                     result[current_n_pedca] = float(s.split(":")[1].strip())
                 except:
@@ -1120,6 +1261,339 @@ def plot_delay_pdf_overlay(results: dict, out_path: Path,
     return out_path
 
 
+# ─────────── NEW: Per-STA-Type Delay PDF/CDF Overlay ─────────────────
+
+def plot_sta_type_delay_overlay(out_path: Path, data_rate: str,
+                                pedca_counts: list, sta_type: str,
+                                n_runs: int = 1,
+                                fig_width: float = 14.0,
+                                fig_height: float = 10.0,
+                                dpi: int = 200):
+    """
+    Overlay delay PDF and CDF for a specific STA type (P-EDCA or Legacy)
+    across different nPedca values.
+    sta_type: "pedca" or "legacy"
+    """
+    selected = [c for c in [0, 1, 5, 10, 15, 20] if c in pedca_counts]
+    if not selected:
+        selected = pedca_counts
+
+    # Filter: pedca only for n_pedca>0, legacy only for n_pedca<N_STA
+    if sta_type == "pedca":
+        selected = [c for c in selected if c > 0]
+        csv_fn = pedca_sta_csv_name
+        type_label = "P-EDCA STAs"
+    else:
+        selected = [c for c in selected if c < N_STA]
+        csv_fn = legacy_sta_csv_name
+        type_label = "Legacy EDCA STAs"
+
+    if not selected:
+        return None
+
+    colors = get_count_colors(selected)
+    fig, (ax_pdf, ax_cdf) = plt.subplots(2, 1, figsize=(fig_width, fig_height))
+
+    loaded_data = {}
+    all_series = []
+    global_xmin = float("inf")
+
+    for n_pedca in selected:
+        csv_path = OUT_DIR / csv_fn(n_pedca, data_rate)
+        if not csv_path.exists():
+            continue
+        try:
+            mids, probs, xmin, xmax, bw = load_histogram(csv_path)
+        except Exception:
+            continue
+        loaded_data[n_pedca] = (mids, probs, bw)
+        all_series.append((mids, probs))
+        global_xmin = min(global_xmin, xmin)
+
+    if not loaded_data:
+        plt.close(fig)
+        return None
+
+    x_95 = _compute_percentile_xlim(all_series, 0.95)
+    zoom_xmax = x_95 * 1.10
+    runs_label = f", avg of {n_runs} runs" if n_runs > 1 else ""
+
+    # PDF
+    for n_pedca in selected:
+        if n_pedca not in loaded_data:
+            continue
+        mids, probs, bw = loaded_data[n_pedca]
+        z_mids = [m for m in mids if m <= zoom_xmax]
+        z_probs = [p for m, p in zip(mids, probs) if m <= zoom_xmax]
+        if not z_mids:
+            continue
+        n_legacy = N_STA - n_pedca
+        label = f"P-EDCA {n_pedca} / Legacy {n_legacy}"
+        color = colors[n_pedca]
+        ax_pdf.plot(z_mids, z_probs, linewidth=0.8, color=color, label=label)
+        ax_pdf.fill_between(z_mids, z_probs, alpha=0.06, color=color)
+
+    ax_pdf.set_xlim(global_xmin, zoom_xmax)
+    ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+    ax_pdf.set_xticks(ticks)
+    ax_pdf.tick_params(axis="x", labelsize=8, rotation=45)
+    ax_pdf.set_xlabel("Delay (us)", fontsize=10)
+    ax_pdf.set_ylabel("Probability", fontsize=11)
+    ax_pdf.set_title(
+        f"{type_label} Delay PDF (zoomed to 95th pctl)  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=12, fontweight="bold"
+    )
+    ax_pdf.grid(True, alpha=0.25, linestyle="--")
+    ax_pdf.legend(loc="upper right", fontsize=8)
+
+    # CDF
+    for n_pedca in selected:
+        if n_pedca not in loaded_data:
+            continue
+        mids, probs, bw = loaded_data[n_pedca]
+        full_total = sum(probs)
+        if full_total <= 0:
+            continue
+        cdf_mids, cdf_vals = [], []
+        running = 0.0
+        for m, p in zip(mids, probs):
+            running += p
+            if m <= zoom_xmax:
+                cdf_mids.append(m)
+                cdf_vals.append(running / full_total)
+        if not cdf_mids:
+            continue
+        n_legacy = N_STA - n_pedca
+        label = f"P-EDCA {n_pedca} / Legacy {n_legacy}"
+        color = colors[n_pedca]
+        ax_cdf.plot(cdf_mids, cdf_vals, linewidth=1.0, color=color, label=label)
+
+    ax_cdf.set_xlim(global_xmin, zoom_xmax)
+    ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+    ax_cdf.set_xticks(ticks)
+    ax_cdf.set_ylim(0, 1.02)
+    ax_cdf.tick_params(axis="x", labelsize=8, rotation=45)
+    ax_cdf.set_xlabel("Delay (us)", fontsize=10)
+    ax_cdf.set_ylabel("Cumulative Probability", fontsize=11)
+    ax_cdf.set_title(
+        f"{type_label} Delay CDF  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=12, fontweight="bold"
+    )
+    ax_cdf.grid(True, alpha=0.25, linestyle="--")
+    ax_cdf.legend(loc="lower right", fontsize=8)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+# ─────────── NEW: Computed Metric Plots (Stats 3-7) ─────────────────
+
+def _compute_derived_metrics(stats_path: Path, pedca_counts: list) -> dict:
+    """
+    Compute all derived metrics (stats 3-7) from the stats file.
+    Returns dict of metric_name -> {n_pedca: value}.
+    """
+    # Load raw counters
+    total_pedca_attempt = parse_stats_file_for_metric(stats_path, pedca_counts, "total_pedca_attempt")
+    total_pedca_tx = parse_stats_file_for_metric(stats_path, pedca_counts, "total_pedca_tx")
+    total_stage2_tx = parse_stats_file_for_metric(stats_path, pedca_counts, "total_stage2_tx")
+    fail_rts_no_cts = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_rts_no_cts")
+    fail_rts_collision = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_rts_collision")
+    fail_timing_expired = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_timing_expired")
+    fail_deferral = parse_stats_file_for_metric(stats_path, pedca_counts, "fail_deferral")
+    pedca_sta_succ = parse_stats_file_for_metric(stats_path, pedca_counts, "pedca_sta_succ_count")
+    pedca_sta_zero = parse_stats_file_for_metric(stats_path, pedca_counts, "pedca_sta_zero_retx")
+    legacy_sta_succ = parse_stats_file_for_metric(stats_path, pedca_counts, "legacy_sta_succ_count")
+    legacy_sta_zero = parse_stats_file_for_metric(stats_path, pedca_counts, "legacy_sta_zero_retx")
+
+    results = {
+        "per_sta_pedca_attempt": {},       # Stat 2: avg DS-CTS per P-EDCA STA
+        "pedca_oneshot_success": {},        # Stat 3: pedcaSuccess / dsCts
+        "edca_oneshot_success_legacy": {},  # Stat 4: legacy zero-retx ratio
+        "edca_oneshot_success_pedca": {},   # Stat 4 ext: pedca-sta zero-retx ratio
+        "pedca_kickback_prob": {},          # Stat 5: total failures / dsCts
+        "pedca_rts_collision_prob": {},     # Stat 6: collisions / stage2 TX
+        "pedca_attempts_per_success": {},   # Stat 7: dsCts / pedcaSuccess
+    }
+
+    for n in pedca_counts:
+        n_pedca_sta = n
+        attempts = total_pedca_attempt.get(n, 0)
+        success = total_pedca_tx.get(n, 0)
+        s2tx = total_stage2_tx.get(n, 0)
+        fail_total = (fail_rts_no_cts.get(n, 0) + fail_rts_collision.get(n, 0)
+                      + fail_timing_expired.get(n, 0) + fail_deferral.get(n, 0))
+        coll = fail_rts_collision.get(n, 0)
+
+        # Stat 2: per-STA P-EDCA attempts
+        if n_pedca_sta > 0:
+            results["per_sta_pedca_attempt"][n] = attempts / n_pedca_sta
+
+        # Stat 3: P-EDCA one-shot success
+        if n > 0 and attempts > 0:
+            results["pedca_oneshot_success"][n] = success / attempts * 100.0
+
+        # Stat 4: EDCA one-shot (legacy)
+        ls = legacy_sta_succ.get(n, 0)
+        lz = legacy_sta_zero.get(n, 0)
+        if ls > 0:
+            results["edca_oneshot_success_legacy"][n] = lz / ls * 100.0
+
+        # Stat 4 ext: EDCA one-shot (P-EDCA STAs)
+        ps = pedca_sta_succ.get(n, 0)
+        pz = pedca_sta_zero.get(n, 0)
+        if ps > 0:
+            results["edca_oneshot_success_pedca"][n] = pz / ps * 100.0
+
+        # Stat 5: kickback probability
+        if n > 0 and attempts > 0:
+            results["pedca_kickback_prob"][n] = fail_total / attempts * 100.0
+
+        # Stat 6: RTS collision probability
+        if n > 0 and s2tx > 0:
+            results["pedca_rts_collision_prob"][n] = coll / s2tx * 100.0
+
+        # Stat 7: attempts per success
+        if n > 0 and success > 0:
+            results["pedca_attempts_per_success"][n] = attempts / success
+
+    return results
+
+
+def plot_derived_metric(data: dict, out_path: Path,
+                        ylabel: str, title: str,
+                        data_rate: str, n_runs: int = 1,
+                        color: str = "#4C72B0",
+                        fig_width: float = 12.0,
+                        fig_height: float = 6.0,
+                        dpi: int = 200):
+    """Plot a single derived metric vs nPedca."""
+    if not data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    x_vals = sorted(data.keys())
+    y_vals = [data[x] for x in x_vals]
+
+    ax.plot(x_vals, y_vals, marker="o", markersize=5, linewidth=1.5, color=color)
+    ax.fill_between(x_vals, y_vals, alpha=0.1, color=color)
+
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
+    ax.set_title(f"{title}  —  nSta={N_STA}, {data_rate}{runs_label}",
+                 fontsize=13, fontweight="bold")
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.set_xticks(x_vals)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+def plot_edca_oneshot_combined(derived: dict, out_path: Path,
+                               data_rate: str, n_runs: int = 1,
+                               fig_width: float = 12.0,
+                               fig_height: float = 6.0,
+                               dpi: int = 200):
+    """Plot legacy and P-EDCA STA one-shot success on the same axes."""
+    legacy = derived.get("edca_oneshot_success_legacy", {})
+    pedca = derived.get("edca_oneshot_success_pedca", {})
+    if not legacy and not pedca:
+        return None
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    if legacy:
+        x = sorted(legacy.keys())
+        y = [legacy[k] for k in x]
+        ax.plot(x, y, marker="o", markersize=5, linewidth=1.5,
+                color="#C44E52", label="Legacy EDCA STAs")
+
+    if pedca:
+        x = sorted(pedca.keys())
+        y = [pedca[k] for k in x]
+        ax.plot(x, y, marker="s", markersize=5, linewidth=1.5,
+                color="#4C72B0", label="P-EDCA STAs")
+
+    ax.set_xlabel("Number of P-EDCA STAs", fontsize=11)
+    ax.set_ylabel("One-Shot Success Ratio (%)\n(0 MAC retransmissions)", fontsize=11)
+    ax.set_title(
+        f"EDCA One-Shot Success Ratio (0 retx)  —  nSta={N_STA}, {data_rate}{runs_label}",
+        fontsize=13, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.legend(loc="best", fontsize=10)
+    all_x = sorted(set(list(legacy.keys()) + list(pedca.keys())))
+    if all_x:
+        ax.set_xticks(all_x)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
+def plot_new_stats_combined(derived: dict, stats_path: Path, out_path: Path,
+                            data_rate: str, pedca_counts: list,
+                            n_runs: int = 1,
+                            fig_width: float = 14.0,
+                            fig_height: float = 24.0,
+                            dpi: int = 200):
+    """
+    Multi-subplot figure with all new stats (2-7) for quick overview.
+    """
+    subplots = [
+        ("per_sta_pedca_attempt", "Avg P-EDCA Attempts\nper P-EDCA STA",
+         "[Stat 2] Per-STA P-EDCA Attempt Count", "#8172B3"),
+        ("pedca_oneshot_success", "P-EDCA One-Shot\nSuccess (%)",
+         "[Stat 3] P-EDCA One-Shot Success (Success/DS-CTS)", "#55A868"),
+        ("edca_oneshot_success_legacy", "Legacy One-Shot\nSuccess (%)",
+         "[Stat 4] Legacy EDCA One-Shot (0 retx)", "#C44E52"),
+        ("pedca_kickback_prob", "Kickback-to-EDCA\nProbability (%)",
+         "[Stat 5] P-EDCA Kickback Probability", "#DD8452"),
+        ("pedca_rts_collision_prob", "RTS Collision\nProbability (%)",
+         "[Stat 6] P-EDCA RTS Collision Probability", "#d62728"),
+        ("pedca_attempts_per_success", "DS-CTS Attempts\nper P-EDCA Success",
+         "[Stat 7] P-EDCA Attempts per Success", "#4C72B0"),
+    ]
+
+    fig, axes = plt.subplots(len(subplots), 1, figsize=(fig_width, fig_height))
+    runs_label = f" (avg of {n_runs} runs)" if n_runs > 1 else ""
+
+    for idx, (key, ylabel, title, color) in enumerate(subplots):
+        ax = axes[idx]
+        data = derived.get(key, {})
+        if data:
+            x_vals = sorted(data.keys())
+            y_vals = [data[x] for x in x_vals]
+            ax.plot(x_vals, y_vals, marker="o", markersize=4, linewidth=1.2, color=color)
+            ax.fill_between(x_vals, y_vals, alpha=0.08, color=color)
+            ax.set_xticks(x_vals)
+        ax.set_xlabel("Number of P-EDCA STAs", fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.set_title(f"{title}  —  nSta={N_STA}, {data_rate}{runs_label}",
+                     fontsize=11, fontweight="bold")
+        ax.grid(True, alpha=0.3, linestyle="--")
+        ax.tick_params(axis="x", labelsize=7, rotation=45)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+    return out_path
+
+
 # ──────────────────────────── Main ───────────────────────────────────
 
 def main():
@@ -1283,7 +1757,7 @@ def main():
     else:
         print(f"    ⚠ No data for P-EDCA success share")
 
-    # 4. Delay PDF/CDF overlay
+    # 4. Delay PDF/CDF overlay (all STAs combined — existing)
     overlay_pdf = OUT_DIR / f"vo_delay_pdf_cdf_overlay_{data_rate}.pdf"
     result = plot_delay_pdf_overlay(
         {}, overlay_pdf, data_rate, pedca_counts, n_runs,
@@ -1294,6 +1768,119 @@ def main():
     else:
         print(f"    ⚠ No data for delay PDF/CDF overlay")
 
+    # ── NEW PLOTS ──
+    print(f"\n  Generating new extended statistics plots...")
+
+    # 5. [Plot 1] Legacy STA delay PDF/CDF overlay
+    legacy_overlay = OUT_DIR / f"legacy_sta_delay_pdf_cdf_overlay_{data_rate}.pdf"
+    result = plot_sta_type_delay_overlay(
+        legacy_overlay, data_rate, pedca_counts, "legacy", n_runs,
+        args.fig_width, 10.0, args.dpi
+    )
+    if result:
+        print(f"    ✔ {legacy_overlay.name}")
+    else:
+        print(f"    ⚠ No data for legacy STA delay overlay")
+
+    # 6. [Plot 2] P-EDCA STA delay PDF/CDF overlay
+    pedca_overlay = OUT_DIR / f"pedca_sta_delay_pdf_cdf_overlay_{data_rate}.pdf"
+    result = plot_sta_type_delay_overlay(
+        pedca_overlay, data_rate, pedca_counts, "pedca", n_runs,
+        args.fig_width, 10.0, args.dpi
+    )
+    if result:
+        print(f"    ✔ {pedca_overlay.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA STA delay overlay")
+
+    # 7. Compute derived metrics (Stats 2-7) from the stats file
+    derived = _compute_derived_metrics(stats_path, pedca_counts)
+
+    # 8. [Plot 3] Per-STA P-EDCA attempt count vs nPedca
+    p = OUT_DIR / f"per_sta_pedca_attempt_vs_pedca_count_{data_rate}.pdf"
+    result = plot_derived_metric(
+        derived["per_sta_pedca_attempt"], p,
+        "Avg P-EDCA Attempts\nper P-EDCA STA", "[Stat 2] Per-STA P-EDCA Attempts",
+        data_rate, n_runs, "#8172B3", args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for per-STA P-EDCA attempts")
+
+    # 9. [Plot 4] P-EDCA one-shot success vs nPedca
+    p = OUT_DIR / f"pedca_oneshot_success_vs_pedca_count_{data_rate}.pdf"
+    result = plot_derived_metric(
+        derived["pedca_oneshot_success"], p,
+        "P-EDCA One-Shot\nSuccess (%)", "[Stat 3] P-EDCA One-Shot Success (Success/DS-CTS)",
+        data_rate, n_runs, "#55A868", args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA one-shot success")
+
+    # 10. [Plot 5] EDCA one-shot success (legacy + P-EDCA STAs combined)
+    p = OUT_DIR / f"edca_oneshot_success_vs_pedca_count_{data_rate}.pdf"
+    result = plot_edca_oneshot_combined(
+        derived, p, data_rate, n_runs,
+        args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for EDCA one-shot success")
+
+    # 11. [Plot 6] P-EDCA kickback probability vs nPedca
+    p = OUT_DIR / f"pedca_kickback_prob_vs_pedca_count_{data_rate}.pdf"
+    result = plot_derived_metric(
+        derived["pedca_kickback_prob"], p,
+        "Kickback-to-EDCA\nProbability (%)",
+        "[Stat 5] P-EDCA Kickback Probability",
+        data_rate, n_runs, "#DD8452", args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA kickback probability")
+
+    # 12. [Plot 7] P-EDCA RTS collision probability vs nPedca
+    p = OUT_DIR / f"pedca_rts_collision_prob_vs_pedca_count_{data_rate}.pdf"
+    result = plot_derived_metric(
+        derived["pedca_rts_collision_prob"], p,
+        "RTS Collision\nProbability (%)",
+        "[Stat 6] P-EDCA RTS Collision Probability",
+        data_rate, n_runs, "#d62728", args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA RTS collision probability")
+
+    # 13. [Plot 8] P-EDCA attempts per success vs nPedca
+    p = OUT_DIR / f"pedca_attempts_per_success_vs_pedca_count_{data_rate}.pdf"
+    result = plot_derived_metric(
+        derived["pedca_attempts_per_success"], p,
+        "DS-CTS Attempts\nper P-EDCA Success",
+        "[Stat 7] P-EDCA Attempts per Success",
+        data_rate, n_runs, "#4C72B0", args.fig_width, args.fig_height, args.dpi
+    )
+    if result:
+        print(f"    ✔ {p.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA attempts per success")
+
+    # 14. Combined new stats overview (6 subplots)
+    combined_new = OUT_DIR / f"new_stats_combined_vs_pedca_count_{data_rate}.pdf"
+    result = plot_new_stats_combined(
+        derived, stats_path, combined_new, data_rate, pedca_counts, n_runs,
+        args.fig_width, 24.0, args.dpi
+    )
+    if result:
+        print(f"    ✔ {combined_new.name}")
+    else:
+        print(f"    ⚠ No data for combined new stats plot")
+
     elapsed_total = time.time() - t_total
 
     # ── Summary ──
@@ -1301,7 +1888,7 @@ def main():
     print(f"  Sweep complete!  Total time: {elapsed_total:.1f}s")
     print(f"  Output directory: {OUT_DIR}")
     print(f"\n  CSV files:")
-    for f in sorted(OUT_DIR.glob(f"*_vo_delay_pdf_*_{data_rate}.csv")):
+    for f in sorted(OUT_DIR.glob(f"*_{data_rate}.csv")):
         if "_run" not in f.name:
             print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
     print(f"\n  Plot files:")

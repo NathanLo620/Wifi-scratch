@@ -49,12 +49,12 @@ SIM_TIME        = 10.0                                 # Simulation duration (s)
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
 MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))  # Keep CPU near saturation
 N_RUNS          = 10                                    # Runs to average
-SIM_BINARY      = "scratch/pedca_verification_nsta.cc" # Single unified binary
+SIM_BINARY      = "scratch/pedca_verification_nsta_mod.cc" # Single unified binary
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
 NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
-OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_rts_on_D13_mod")
+OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_agg_off_D13")
 
 # ── Force non-interactive backend ──
 import matplotlib
@@ -192,10 +192,27 @@ def extract_stats_block(stdout: str) -> str:
             end_idx = i
             break
     if start_idx is None:
+        block = []
+    else:
+        block = lines[start_idx:end_idx]
+        while block and not block[-1].strip():
+            block.pop()
+
+    # Also capture EXTENDED_STATS block
+    ext_start = None
+    ext_end = None
+    for i, line in enumerate(lines):
+        if "EXTENDED_STATS_BEGIN" in line:
+            ext_start = i
+        if "EXTENDED_STATS_END" in line:
+            ext_end = i + 1
+            break
+    if ext_start is not None and ext_end is not None:
+        block.extend([""])
+        block.extend(lines[ext_start:ext_end])
+
+    if not block:
         return "  (no General Statistics output found)\n"
-    block = lines[start_idx:end_idx]
-    while block and not block[-1].strip():
-        block.pop()
     return "\n".join(block) + "\n"
 
 
@@ -206,12 +223,39 @@ def parse_stats(stdout: str) -> dict:
         "pedca_ratio": 0.0,
         "channel_idle_ratio": 0.0,
         "avg_pedca_tx_ratio": 0.0,
+        "avg_pedca_success_rate": 0.0,
+        "total_pedca_tx": 0,
+        "total_edca_tx": 0,
+        "total_pedca_attempt": 0,
         "total_successes": 0,
         "total_failures": 0,
         "total_retransmissions": 0,
+        "total_ds_cts_sent": 0,
+        "total_stage2_entry": 0,
+        "total_stage2_tx": 0,
+        "total_pedca_success": 0,
+        "total_edca_vo_success": 0,
+        "fail_rts_no_cts": 0,
+        "fail_rts_collision": 0,
+        "fail_timing_expired": 0,
+        "fail_deferral": 0,
+        "total_vo_tx": 0,
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
+        # Extended stats (from pedca_verification_nsta_mod)
+        "pedca_sta_succ_count": 0,
+        "pedca_sta_fail_count": 0,
+        "pedca_sta_zero_retx": 0,
+        "legacy_sta_succ_count": 0,
+        "legacy_sta_fail_count": 0,
+        "legacy_sta_zero_retx": 0,
+        "pedca_sta_avg_mac_delay": 0.0,
+        "pedca_sta_avg_queue_delay": 0.0,
+        "pedca_sta_avg_access_delay": 0.0,
+        "legacy_sta_avg_mac_delay": 0.0,
+        "legacy_sta_avg_queue_delay": 0.0,
+        "legacy_sta_avg_access_delay": 0.0,
     }
 
     lines = block.splitlines()
@@ -228,6 +272,18 @@ def parse_stats(stdout: str) -> dict:
             except: pass
         elif s.startswith("P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx):"):
             try: result["avg_pedca_tx_ratio"] = float(s.split(":")[1].split("%")[0].strip()) / 100.0
+            except: pass
+        elif s.startswith("Avg P-EDCA Attempt Success Rate:"):
+            try: result["avg_pedca_success_rate"] = float(s.split(":")[1].split("%")[0].strip()) / 100.0
+            except: pass
+        elif s.startswith("Global P-EDCA Tx Success:"):
+            try: result["total_pedca_tx"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Global EDCA Tx Success:"):
+            try: result["total_edca_tx"] = float(s.split(":")[1].strip())
+            except: pass
+        elif s.startswith("Global P-EDCA Attempt (DS-CTS Sent):"):
+            try: result["total_pedca_attempt"] = float(s.split(":")[1].strip())
             except: pass
         elif s.startswith("Total Successes:"):
             try: result["total_successes"] = float(s.split(":")[1].strip())
@@ -246,6 +302,21 @@ def parse_stats(stdout: str) -> dict:
             current_ac = None
         elif "Failure Reasons" in s:
             section = "reasons"
+        elif "P-EDCA Detailed Trace" in s:
+            section = "pedca_trace"
+        elif section == "pedca_trace" and ":" in s:
+            key, _, val = s.partition(":")
+            key = key.strip()
+            try:
+                num = float(val.strip().split()[0])
+                if key == "Stage 2 Entered": result["total_stage2_entry"] = num
+                elif key == "Stage 2 TX Started": result["total_stage2_tx"] = num
+                elif key == "P-EDCA Fail RTS No CTS": result["fail_rts_no_cts"] = num
+                elif key == "P-EDCA Fail RTS Collision": result["fail_rts_collision"] = num
+                elif key == "P-EDCA Fail Timing Expired": result["fail_timing_expired"] = num
+                elif key == "P-EDCA Fail Deferral": result["fail_deferral"] = num
+                elif key == "Total VO TX (P-EDCA+EDCA)": result["total_vo_tx"] = num
+            except: pass
         elif section == "success" and s.startswith("AC_") and s.endswith(":"):
             current_ac = s.rstrip(":")
             result["per_ac"][current_ac] = {}
@@ -271,6 +342,29 @@ def parse_stats(stdout: str) -> dict:
                 result["failure_reasons"][key] = float(val.strip())
             except: pass
 
+        # Extended stats (machine-parseable block)
+        ext_map = {
+            "PEDCA_STA_SUCC_COUNT": "pedca_sta_succ_count",
+            "PEDCA_STA_FAIL_COUNT": "pedca_sta_fail_count",
+            "PEDCA_STA_ZERO_RETX": "pedca_sta_zero_retx",
+            "LEGACY_STA_SUCC_COUNT": "legacy_sta_succ_count",
+            "LEGACY_STA_FAIL_COUNT": "legacy_sta_fail_count",
+            "LEGACY_STA_ZERO_RETX": "legacy_sta_zero_retx",
+            "PEDCA_STA_AVG_MAC_DELAY": "pedca_sta_avg_mac_delay",
+            "PEDCA_STA_AVG_QUEUE_DELAY": "pedca_sta_avg_queue_delay",
+            "PEDCA_STA_AVG_ACCESS_DELAY": "pedca_sta_avg_access_delay",
+            "LEGACY_STA_AVG_MAC_DELAY": "legacy_sta_avg_mac_delay",
+            "LEGACY_STA_AVG_QUEUE_DELAY": "legacy_sta_avg_queue_delay",
+            "LEGACY_STA_AVG_ACCESS_DELAY": "legacy_sta_avg_access_delay",
+        }
+        for ext_key, result_key in ext_map.items():
+            if s.startswith(ext_key + ":"):
+                try:
+                    result[result_key] = float(s.split(":")[1].strip())
+                except:
+                    pass
+                break
+
     return result
 
 
@@ -284,12 +378,39 @@ def average_stats(stats_list: list) -> dict:
         "pedca_ratio": stats_list[0].get("pedca_ratio", 0.0),
         "channel_idle_ratio": sum(s.get("channel_idle_ratio", 0.0) for s in stats_list) / n,
         "avg_pedca_tx_ratio": sum(s.get("avg_pedca_tx_ratio", 0.0) for s in stats_list) / n,
-        "total_successes": sum(s["total_successes"] for s in stats_list) / n,
-        "total_failures": sum(s["total_failures"] for s in stats_list) / n,
-        "total_retransmissions": sum(s["total_retransmissions"] for s in stats_list) / n,
+        "avg_pedca_success_rate": sum(s.get("avg_pedca_success_rate", 0.0) for s in stats_list) / n,
+        "total_pedca_tx": sum(s.get("total_pedca_tx", 0) for s in stats_list) / n,
+        "total_edca_tx": sum(s.get("total_edca_tx", 0) for s in stats_list) / n,
+        "total_pedca_attempt": sum(s.get("total_pedca_attempt", 0) for s in stats_list) / n,
+        "total_successes": sum(s.get("total_successes", 0) for s in stats_list) / n,
+        "total_failures": sum(s.get("total_failures", 0) for s in stats_list) / n,
+        "total_retransmissions": sum(s.get("total_retransmissions", 0) for s in stats_list) / n,
+        "total_ds_cts_sent": sum(s.get("total_ds_cts_sent", 0) for s in stats_list) / n,
+        "total_stage2_entry": sum(s.get("total_stage2_entry", 0) for s in stats_list) / n,
+        "total_stage2_tx": sum(s.get("total_stage2_tx", 0) for s in stats_list) / n,
+        "total_pedca_success": sum(s.get("total_pedca_success", 0) for s in stats_list) / n,
+        "total_edca_vo_success": sum(s.get("total_edca_vo_success", 0) for s in stats_list) / n,
+        "fail_rts_no_cts": sum(s.get("fail_rts_no_cts", 0) for s in stats_list) / n,
+        "fail_rts_collision": sum(s.get("fail_rts_collision", 0) for s in stats_list) / n,
+        "fail_timing_expired": sum(s.get("fail_timing_expired", 0) for s in stats_list) / n,
+        "fail_deferral": sum(s.get("fail_deferral", 0) for s in stats_list) / n,
+        "total_vo_tx": sum(s.get("total_vo_tx", 0) for s in stats_list) / n,
         "per_ac": {},
         "failure_ac": {},
         "failure_reasons": {},
+        # Extended stats
+        "pedca_sta_succ_count": sum(s.get("pedca_sta_succ_count", 0) for s in stats_list) / n,
+        "pedca_sta_fail_count": sum(s.get("pedca_sta_fail_count", 0) for s in stats_list) / n,
+        "pedca_sta_zero_retx": sum(s.get("pedca_sta_zero_retx", 0) for s in stats_list) / n,
+        "legacy_sta_succ_count": sum(s.get("legacy_sta_succ_count", 0) for s in stats_list) / n,
+        "legacy_sta_fail_count": sum(s.get("legacy_sta_fail_count", 0) for s in stats_list) / n,
+        "legacy_sta_zero_retx": sum(s.get("legacy_sta_zero_retx", 0) for s in stats_list) / n,
+        "pedca_sta_avg_mac_delay": sum(s.get("pedca_sta_avg_mac_delay", 0) for s in stats_list) / n,
+        "pedca_sta_avg_queue_delay": sum(s.get("pedca_sta_avg_queue_delay", 0) for s in stats_list) / n,
+        "pedca_sta_avg_access_delay": sum(s.get("pedca_sta_avg_access_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_mac_delay": sum(s.get("legacy_sta_avg_mac_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_queue_delay": sum(s.get("legacy_sta_avg_queue_delay", 0) for s in stats_list) / n,
+        "legacy_sta_avg_access_delay": sum(s.get("legacy_sta_avg_access_delay", 0) for s in stats_list) / n,
     }
 
     all_acs = set()
@@ -330,10 +451,17 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
     lines.append(f"=== WifiTxStatsHelper (MAC-layer) [Averaged over {n_runs} runs] ===")
     lines.append(f"P-EDCA Ratio: {avg['pedca_ratio']}")
     lines.append(f"Channel Idle Time (AP): {avg.get('channel_idle_ratio', 0.0):.2f} %")
-    lines.append(f"Avg P-EDCA Tx Ratio: {avg.get('avg_pedca_tx_ratio', 0.0):.6g}")
-    lines.append(f"Total Successes:       {avg['total_successes']:.1f}")
-    lines.append(f"Total Failures:        {avg['total_failures']:.1f}")
-    lines.append(f"Total Retransmissions: {avg['total_retransmissions']:.1f}")
+    lines.append(f"P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): {avg.get('avg_pedca_tx_ratio', 0.0) * 100.0:.6g} %")
+    lines.append(f"Avg P-EDCA Attempt Success Rate: {avg.get('avg_pedca_success_rate', 0.0) * 100.0:.6g} %")
+    lines.append(f"Global P-EDCA Tx Success: {avg.get('total_pedca_tx', 0):.1f}")
+    lines.append(f"Global EDCA Tx Success: {avg.get('total_edca_tx', 0):.1f}")
+    lines.append(f"Global P-EDCA Attempt (DS-CTS Sent): {avg.get('total_pedca_attempt', 0):.1f}")
+    if avg.get("total_successes", 0) > 0:
+        lines.append(f"Total Successes:       {avg.get('total_successes', 0):.1f}")
+    if avg.get("total_failures", 0) > 0:
+        lines.append(f"Total Failures:        {avg.get('total_failures', 0):.1f}")
+    if avg.get("total_retransmissions", 0) > 0:
+        lines.append(f"Total Retransmissions: {avg.get('total_retransmissions', 0):.1f}")
     lines.append("")
     lines.append("--- Per-AC Success Statistics ---")
 
@@ -365,6 +493,43 @@ def format_stats_text(avg: dict, n_runs: int) -> str:
         lines.append("--- Failure Reasons by AC ---")
         for reason, count in sorted(avg["failure_reasons"].items()):
             lines.append(f"  {reason}: {count:.1f}")
+
+    lines.append("")
+    lines.append("--- P-EDCA Detailed Trace ---")
+    lines.append(f"DS-CTS Sent: {avg.get('total_pedca_attempt', 0):.1f}")
+    lines.append(f"Stage 2 Entered: {avg.get('total_stage2_entry', 0):.1f}")
+    lines.append(f"Stage 2 TX Started: {avg.get('total_stage2_tx', 0):.1f}")
+    lines.append(f"P-EDCA TX Success: {avg.get('total_pedca_tx', 0):.1f}")
+    lines.append(f"EDCA VO TX Success: {avg.get('total_edca_tx', 0):.1f}")
+    lines.append(f"P-EDCA Fail RTS No CTS: {avg.get('fail_rts_no_cts', 0):.1f}")
+    lines.append(f"P-EDCA Fail RTS Collision: {avg.get('fail_rts_collision', 0):.1f}")
+    lines.append(f"P-EDCA Fail Timing Expired: {avg.get('fail_timing_expired', 0):.1f}")
+    lines.append(f"P-EDCA Fail Deferral: {avg.get('fail_deferral', 0):.1f}")
+
+    total_vo = avg.get('total_vo_tx', 0)
+    lines.append(f"Total VO TX (P-EDCA+EDCA): {total_vo:.1f}")
+
+    pedca_ratio = (avg.get('total_pedca_tx', 0) / total_vo * 100.0) if total_vo > 0 else 0.0
+    edca_ratio = (avg.get('total_edca_tx', 0) / total_vo * 100.0) if total_vo > 0 else 0.0
+
+    lines.append(f"P-EDCA Success Ratio: {pedca_ratio:.4f} %")
+    lines.append(f"EDCA Success Ratio: {edca_ratio:.4f} %")
+
+    # Extended stats
+    lines.append("")
+    lines.append("--- Extended P-EDCA vs Legacy Statistics ---")
+    lines.append(f"PEDCA_STA_SUCC_COUNT: {avg.get('pedca_sta_succ_count', 0):.1f}")
+    lines.append(f"PEDCA_STA_FAIL_COUNT: {avg.get('pedca_sta_fail_count', 0):.1f}")
+    lines.append(f"PEDCA_STA_ZERO_RETX: {avg.get('pedca_sta_zero_retx', 0):.1f}")
+    lines.append(f"LEGACY_STA_SUCC_COUNT: {avg.get('legacy_sta_succ_count', 0):.1f}")
+    lines.append(f"LEGACY_STA_FAIL_COUNT: {avg.get('legacy_sta_fail_count', 0):.1f}")
+    lines.append(f"LEGACY_STA_ZERO_RETX: {avg.get('legacy_sta_zero_retx', 0):.1f}")
+    lines.append(f"PEDCA_STA_AVG_MAC_DELAY: {avg.get('pedca_sta_avg_mac_delay', 0):.3f}")
+    lines.append(f"PEDCA_STA_AVG_QUEUE_DELAY: {avg.get('pedca_sta_avg_queue_delay', 0):.3f}")
+    lines.append(f"PEDCA_STA_AVG_ACCESS_DELAY: {avg.get('pedca_sta_avg_access_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_MAC_DELAY: {avg.get('legacy_sta_avg_mac_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_QUEUE_DELAY: {avg.get('legacy_sta_avg_queue_delay', 0):.3f}")
+    lines.append(f"LEGACY_STA_AVG_ACCESS_DELAY: {avg.get('legacy_sta_avg_access_delay', 0):.3f}")
 
     return "\n".join(lines) + "\n"
 
