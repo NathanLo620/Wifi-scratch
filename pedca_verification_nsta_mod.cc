@@ -35,7 +35,53 @@ static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
 
+// Per-STA TX event log for collision-source attribution
+struct TxEvent {
+  double timeUs;
+  uint32_t nodeId;
+  std::string frameType;
+  uint32_t size;
+};
+static std::vector<TxEvent> g_txEvents;
+static bool g_txLogEnabled = false;
 
+void PhyTxBeginCallback(std::string context, Ptr<const Packet> packet, double txPowerW)
+{
+  if (!g_txLogEnabled) return;
+  // Filter to warmup window
+  double nowUs = Simulator::Now().GetMicroSeconds();
+  if (nowUs < g_warmupTime * 1e6) return;
+  if (nowUs > g_simTime * 1e6) return;
+
+  // Parse node ID from context: "/NodeList/<id>/DeviceList/..."
+  size_t s = context.find("/NodeList/");
+  if (s == std::string::npos) return;
+  s += 10;
+  size_t e = context.find('/', s);
+  uint32_t nodeId = std::stoi(context.substr(s, e - s));
+
+  WifiMacHeader hdr;
+  Ptr<Packet> pktCopy = packet->Copy();
+  if (pktCopy->PeekHeader(hdr)) {
+    std::string typeStr;
+    if (hdr.IsRts()) typeStr = "RTS";
+    else if (hdr.IsCts()) typeStr = "CTS";
+    else if (hdr.IsAck()) typeStr = "ACK";
+    else if (hdr.IsBlockAck()) typeStr = "BACK";
+    else if (hdr.IsBlockAckReq()) typeStr = "BAR";
+    else if (hdr.IsQosData()) {
+      uint8_t tid = hdr.GetQosTid();
+      typeStr = "QOSDATA_TID" + std::to_string(static_cast<int>(tid));
+    }
+    else if (hdr.IsData()) typeStr = "DATA";
+    else if (hdr.IsBeacon()) typeStr = "BEACON";
+    else if (hdr.IsMgt()) typeStr = "MGT";
+    else if (hdr.IsCtl()) typeStr = "CTL";
+    else typeStr = "OTHER";
+
+    g_txEvents.push_back({nowUs, nodeId, typeStr, packet->GetSize()});
+  }
+}
 
 void ApPhyStateTrace(std::string context, Time start, Time duration, ns3::WifiPhyState state)
 {
@@ -85,28 +131,46 @@ static uint8_t TidToAc(uint8_t tid)
 
 int main(int argc, char* argv[])
 {
-  uint32_t nSta = 30;
-  double simTime = 10.0;
+  uint32_t nSta = 20;
+  double simTime = 3.0;
   std::string dataRate = "1Mbps";
+  std::string viDataRate = "1Mbps";
   uint32_t payloadSize = 1000;
   bool enableRts = true;
+  bool enableAggregation = true;
   bool verbose = false;
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
-  std::string pedcaStaDelayOutput = "";  // CSV for P-EDCA STA delay histogram
-  std::string legacyStaDelayOutput = ""; // CSV for Legacy STA delay histogram
-  double pedcaRatio = 1.0; // Fraction of STAs with P-EDCA enabled (0.0-1.0)
+  std::string videoPdfOutput = "scratch/delay_pdf/pedca_vi_delay_pdf.csv";
+  std::string pedcaStaDelayOutput = "";  // CSV for P-EDCA STA delay histogram (all ACs)
+  std::string legacyStaDelayOutput = ""; // CSV for Legacy STA delay histogram (all ACs)
+  std::string pedcaStaVoDelayOutput = "";  // CSV for P-EDCA STA VO-only delay
+  std::string pedcaStaViDelayOutput = "";  // CSV for P-EDCA STA VI-only delay
+  std::string legacyStaVoDelayOutput = ""; // CSV for Legacy STA VO-only delay
+  std::string legacyStaViDelayOutput = ""; // CSV for Legacy STA VI-only delay
+  std::string backoffLogOutput = "";     // CSV for per-DS-CTS backoff/outcome log
+  std::string txEventLogOutput = "";     // CSV for per-STA PHY TX events
+  double pedcaRatio = 0.05; // Fraction of STAs with P-EDCA enabled (0.0-1.0)
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta", "Number of stations", nSta);
   cmd.AddValue("simTime", "Simulation time (seconds)", simTime);
-  cmd.AddValue("dataRate", "Data rate (e.g., 0.5Mbps)", dataRate);
+  cmd.AddValue("dataRate", "VO data rate per STA (e.g., 1Mbps)", dataRate);
+  cmd.AddValue("viDataRate", "VI data rate per STA (e.g., 1Mbps)", viDataRate);
+  cmd.AddValue("enableAggregation", "Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
   cmd.AddValue("verbose", "Enable logging", verbose);
-  cmd.AddValue("voicePdfBinUs", "VO delay PDF bin width (microseconds)", voicePdfBinUs);
+  cmd.AddValue("voicePdfBinUs", "Delay PDF bin width (microseconds, used for VO/VI)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput", "Output CSV file for VO delay PDF", voicePdfOutput);
-  cmd.AddValue("pedcaStaDelayOutput", "CSV for P-EDCA STA delay PDF", pedcaStaDelayOutput);
-  cmd.AddValue("legacyStaDelayOutput", "CSV for Legacy STA delay PDF", legacyStaDelayOutput);
+  cmd.AddValue("videoPdfOutput", "Output CSV file for VI delay PDF", videoPdfOutput);
+  cmd.AddValue("pedcaStaDelayOutput", "CSV for P-EDCA STA delay PDF (all ACs)", pedcaStaDelayOutput);
+  cmd.AddValue("legacyStaDelayOutput", "CSV for Legacy STA delay PDF (all ACs)", legacyStaDelayOutput);
+  cmd.AddValue("pedcaStaVoDelayOutput", "CSV for P-EDCA STA VO-only delay PDF", pedcaStaVoDelayOutput);
+  cmd.AddValue("pedcaStaViDelayOutput", "CSV for P-EDCA STA VI-only delay PDF", pedcaStaViDelayOutput);
+  cmd.AddValue("legacyStaVoDelayOutput", "CSV for Legacy STA VO-only delay PDF", legacyStaVoDelayOutput);
+  cmd.AddValue("legacyStaViDelayOutput", "CSV for Legacy STA VI-only delay PDF", legacyStaViDelayOutput);
+  cmd.AddValue("backoffLogOutput", "CSV for per-DS-CTS backoff/outcome log", backoffLogOutput);
+  cmd.AddValue("txEventLogOutput", "CSV for per-STA PHY TX events", txEventLogOutput);
   cmd.AddValue("pedcaRatio", "Fraction of STAs with P-EDCA enabled (0.0-1.0)", pedcaRatio);
   cmd.Parse(argc, argv);
   
@@ -133,7 +197,7 @@ int main(int argc, char* argv[])
   wifi.SetStandard(WIFI_STANDARD_80211n);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
                                "DataMode", StringValue("HtMcs7"),
-                               "ControlMode", StringValue("HtMcs0"));
+                               "ControlMode", StringValue("OfdmRate6Mbps"));
   
   // RTS/CTS
   if (!enableRts)
@@ -144,15 +208,17 @@ int main(int argc, char* argv[])
   // Queue size: 400 packets
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
 
-  // Disable A-MPDU and A-MSDU aggregation for all ACs
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(0));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(0));
+  // Aggregation control (matches pedca_verification_nsta.cc).
+  const uint32_t maxAmpduSize = enableAggregation ? 65535 : 0;
+  const uint32_t maxAmsduSize = enableAggregation ? 7935 : 0;
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(maxAmsduSize));
   
   Ssid ssid = Ssid("wifi-backoff-vo");
 
@@ -211,34 +277,64 @@ int main(int argc, char* argv[])
   Ipv4InterfaceContainer apIf = address.Assign(apDevices);
   Ipv4InterfaceContainer staIf = address.Assign(staDevices);
 
-  // Traffic: UDP Server on AP (VO only)
+  // Traffic: UDP Servers on AP (VO + VI)
   uint16_t basePort = 5000;
   constexpr uint8_t voAc = 3;
   constexpr uint8_t voTos = 0xC0;
-  UdpServerHelper server(basePort + voAc);
-  ApplicationContainer serverApp = server.Install(wifiApNode.Get(0));
-  serverApp.Start(Seconds(0.5));
-  serverApp.Stop(Seconds(simTime));
-  
-  // Clients on STAs: Each STA sends VO traffic only
-  DataRate rate(dataRate);
-  double packetsPerSecond = rate.GetBitRate() / (8.0 * payloadSize);
-  Time interval = Seconds(1.0 / packetsPerSecond);
-  
+  constexpr uint8_t viAc = 2;
+  constexpr uint8_t viTos = 0xA0;
+
+  UdpServerHelper voServer(basePort + voAc);
+  ApplicationContainer voServerApp = voServer.Install(wifiApNode.Get(0));
+  voServerApp.Start(Seconds(0.5));
+  voServerApp.Stop(Seconds(simTime));
+
+  UdpServerHelper viServer(basePort + viAc);
+  ApplicationContainer viServerApp = viServer.Install(wifiApNode.Get(0));
+  viServerApp.Start(Seconds(0.5));
+  viServerApp.Stop(Seconds(simTime));
+
+  // Clients on STAs: each STA sends both VO and VI traffic in parallel
+  DataRate voRate(dataRate);
+  double voPps = voRate.GetBitRate() / (8.0 * payloadSize);
+  Time voInterval = Seconds(1.0 / voPps);
+
+  DataRate viRate(viDataRate);
+  double viPps = viRate.GetBitRate() / (8.0 * payloadSize);
+  Time viInterval = Seconds(1.0 / viPps);
+
   Ptr<UniformRandomVariable> startRv = CreateObject<UniformRandomVariable>();
-  
+
   for (uint32_t i = 0; i < nSta; ++i)
   {
-      UdpClientHelper client(apIf.GetAddress(0), basePort + voAc);
-      client.SetAttribute("MaxPackets", UintegerValue(100000));
-      client.SetAttribute("Interval", TimeValue(interval));
-      client.SetAttribute("PacketSize", UintegerValue(payloadSize));
-      client.SetAttribute("Tos", UintegerValue(voTos));
-      
-      ApplicationContainer clientApp = client.Install(wifiStaNodes.Get(i));
-      double start = 0.5 + startRv->GetValue(0.0, 0.5);
-      clientApp.Start(Seconds(start));
-      clientApp.Stop(Seconds(simTime));
+      // VO client
+      UdpClientHelper voClient(apIf.GetAddress(0), basePort + voAc);
+      voClient.SetAttribute("MaxPackets", UintegerValue(100000));
+      voClient.SetAttribute("Interval", TimeValue(voInterval));
+      voClient.SetAttribute("PacketSize", UintegerValue(payloadSize));
+      voClient.SetAttribute("Tos", UintegerValue(voTos));
+      ApplicationContainer voApp = voClient.Install(wifiStaNodes.Get(i));
+      double voStart = 0.5 + startRv->GetValue(0.0, 0.5);
+      voApp.Start(Seconds(voStart));
+      voApp.Stop(Seconds(simTime));
+
+      // VI client (independent jitter so VI and VO don't fire at the same instant)
+      UdpClientHelper viClient(apIf.GetAddress(0), basePort + viAc);
+      viClient.SetAttribute("MaxPackets", UintegerValue(100000));
+      viClient.SetAttribute("Interval", TimeValue(viInterval));
+      viClient.SetAttribute("PacketSize", UintegerValue(payloadSize));
+      viClient.SetAttribute("Tos", UintegerValue(viTos));
+      ApplicationContainer viApp = viClient.Install(wifiStaNodes.Get(i));
+      double viStart = 0.5 + startRv->GetValue(0.0, 0.5);
+      viApp.Start(Seconds(viStart));
+      viApp.Stop(Seconds(simTime));
+  }
+
+  // Connect PHY TX trace on every node (AP + STAs) for collision-source attribution
+  if (!txEventLogOutput.empty()) {
+    g_txLogEnabled = true;
+    Config::Connect("/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/PhyTxBegin",
+                    MakeCallback(&PhyTxBeginCallback));
   }
 
   std::string apPhyStatePath = "/NodeList/" + std::to_string(wifiApNode.Get(0)->GetId()) + "/DeviceList/*/$ns3::WifiNetDevice/Phy/State/State";
@@ -391,12 +487,16 @@ int main(int argc, char* argv[])
   std::vector<uint64_t> helperSucc(4, 0), helperRetxs(4, 0), helperCount(4, 0);
   std::vector<double> helperQueueDelay(4, 0.0), helperAccessDelay(4, 0.0), helperMacDelay(4, 0.0);
   std::vector<double> voiceMacDelayUs;
+  std::vector<double> videoMacDelayUs;
 
   // [Stat 1] Delay partitioned by P-EDCA STAs vs Legacy STAs
   uint64_t pedcaStaSuccCount = 0, legacyStaSuccCount = 0;
   double pedcaStaQueueDelay = 0.0, pedcaStaAccessDelay = 0.0, pedcaStaMacDelay = 0.0;
   double legacyStaQueueDelay = 0.0, legacyStaAccessDelay = 0.0, legacyStaMacDelay = 0.0;
   std::vector<double> pedcaStaMacDelayVec, legacyStaMacDelayVec;
+  // Split by STA-type × AC for VO/VI CDF comparison
+  std::vector<double> pedcaStaVoMacDelayVec, pedcaStaViMacDelayVec;
+  std::vector<double> legacyStaVoMacDelayVec, legacyStaViMacDelayVec;
   // [Stat 4] Legacy EDCA one-shot success (zero retransmissions)
   uint64_t legacyStaZeroRetx = 0;
   // [Stat 4 extended] P-EDCA STA one-shot success (zero retransmissions at MAC level)
@@ -415,6 +515,8 @@ int main(int argc, char* argv[])
       helperCount[ac]++;
       if (ac == voAc) {
         voiceMacDelayUs.push_back(queueUs + accessUs);
+      } else if (ac == viAc) {
+        videoMacDelayUs.push_back(queueUs + accessUs);
       }
 
       // Partition by STA type
@@ -425,6 +527,8 @@ int main(int argc, char* argv[])
         pedcaStaAccessDelay += accessUs;
         pedcaStaMacDelay += macUs;
         pedcaStaMacDelayVec.push_back(macUs);
+        if (ac == voAc) pedcaStaVoMacDelayVec.push_back(macUs);
+        else if (ac == viAc) pedcaStaViMacDelayVec.push_back(macUs);
         if (rec.m_retransmissions == 0) pedcaStaZeroRetx++;
       } else if (legacyNodeIds.count(rec.m_nodeId)) {
         legacyStaSuccCount++;
@@ -432,6 +536,8 @@ int main(int argc, char* argv[])
         legacyStaAccessDelay += accessUs;
         legacyStaMacDelay += macUs;
         legacyStaMacDelayVec.push_back(macUs);
+        if (ac == voAc) legacyStaVoMacDelayVec.push_back(macUs);
+        else if (ac == viAc) legacyStaViMacDelayVec.push_back(macUs);
         if (rec.m_retransmissions == 0) legacyStaZeroRetx++;
       }
     }
@@ -695,6 +801,50 @@ int main(int argc, char* argv[])
   }
   std::cout << "\n";
 
+  // VI delay PDF for plotting (x=delay_us, y=pdf_per_us)
+  std::cout << "--- VI Delay PDF (MAC Delay) ---\n";
+  std::cout << "bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count\n";
+  std::ofstream videoPdfCsv(videoPdfOutput, std::ios::out | std::ios::trunc);
+  if (videoPdfCsv.is_open()) {
+    videoPdfCsv << "bin_start_us,bin_end_us,bin_mid_us,pdf_per_us,probability,count\n";
+  }
+  if (!videoMacDelayUs.empty()) {
+    double maxDelayUs = *std::max_element(videoMacDelayUs.begin(), videoMacDelayUs.end());
+    uint32_t numBins = static_cast<uint32_t>(maxDelayUs / voicePdfBinUs) + 1;
+    std::vector<uint64_t> hist(numBins, 0);
+    for (double d : videoMacDelayUs) {
+      uint32_t idx = static_cast<uint32_t>(d / voicePdfBinUs);
+      if (idx >= numBins) {
+        idx = numBins - 1;
+      }
+      hist[idx]++;
+    }
+    const double sampleCount = static_cast<double>(videoMacDelayUs.size());
+    for (uint32_t i = 0; i < numBins; ++i) {
+      if (hist[i] == 0) {
+        continue;
+      }
+      double binStart = static_cast<double>(i * voicePdfBinUs);
+      double binEnd = binStart + static_cast<double>(voicePdfBinUs);
+      double binMid = (binStart + binEnd) / 2.0;
+      double probability = static_cast<double>(hist[i]) / sampleCount;
+      double pdf = probability / static_cast<double>(voicePdfBinUs);
+      std::cout << binStart << "," << binEnd << "," << binMid << "," << pdf << ","
+                << probability << "," << hist[i] << "\n";
+      if (videoPdfCsv.is_open()) {
+        videoPdfCsv << binStart << "," << binEnd << "," << binMid << "," << pdf << ","
+                    << probability << "," << hist[i] << "\n";
+      }
+    }
+  }
+  if (videoPdfCsv.is_open()) {
+    videoPdfCsv.close();
+    std::cout << "VI Delay PDF CSV saved: " << videoPdfOutput << "\n";
+  } else {
+    std::cout << "VI Delay PDF CSV save failed: " << videoPdfOutput << "\n";
+  }
+  std::cout << "\n";
+
   // ── P-EDCA STA Delay Histogram CSV ──
   auto writeDelayHistCsv = [&](const std::vector<double>& delayVec,
                                const std::string& outputPath,
@@ -731,6 +881,10 @@ int main(int argc, char* argv[])
 
   writeDelayHistCsv(pedcaStaMacDelayVec, pedcaStaDelayOutput, "P-EDCA STA Delay PDF");
   writeDelayHistCsv(legacyStaMacDelayVec, legacyStaDelayOutput, "Legacy STA Delay PDF");
+  writeDelayHistCsv(pedcaStaVoMacDelayVec, pedcaStaVoDelayOutput, "P-EDCA STA VO Delay PDF");
+  writeDelayHistCsv(pedcaStaViMacDelayVec, pedcaStaViDelayOutput, "P-EDCA STA VI Delay PDF");
+  writeDelayHistCsv(legacyStaVoMacDelayVec, legacyStaVoDelayOutput, "Legacy STA VO Delay PDF");
+  writeDelayHistCsv(legacyStaViMacDelayVec, legacyStaViDelayOutput, "Legacy STA VI Delay PDF");
 
   // ── Machine-parseable extended stats (for Python) ──
   std::cout << "--- EXTENDED_STATS_BEGIN ---\n";
@@ -750,7 +904,91 @@ int main(int argc, char* argv[])
     std::cout << "LEGACY_STA_AVG_QUEUE_DELAY: " << (legacyStaQueueDelay / legacyStaSuccCount) << "\n";
     std::cout << "LEGACY_STA_AVG_ACCESS_DELAY: " << (legacyStaAccessDelay / legacyStaSuccCount) << "\n";
   }
+
+  // Per-AC (VO/VI) machine-parseable summary
+  auto emitAcStats = [&](const char* prefix, uint8_t ac, std::vector<double>& delays) {
+    uint64_t succ = helperSucc[ac];
+    uint64_t fail = helperFail[ac];
+    double thr = (succ * payloadSize * 8.0) / duration / 1e6;
+    std::cout << prefix << "_SUCC_COUNT: " << succ << "\n";
+    std::cout << prefix << "_FAIL_COUNT: " << fail << "\n";
+    std::cout << prefix << "_THROUGHPUT_MBPS: " << thr << "\n";
+    if (helperCount[ac] > 0) {
+      std::cout << prefix << "_AVG_MAC_DELAY_US: " << (helperMacDelay[ac] / helperCount[ac]) << "\n";
+      std::cout << prefix << "_AVG_QUEUE_DELAY_US: " << (helperQueueDelay[ac] / helperCount[ac]) << "\n";
+      std::cout << prefix << "_AVG_ACCESS_DELAY_US: " << (helperAccessDelay[ac] / helperCount[ac]) << "\n";
+    }
+    if (!delays.empty()) {
+      std::sort(delays.begin(), delays.end());
+      size_t n = delays.size();
+      std::cout << prefix << "_MEDIAN_MAC_DELAY_US: " << delays[n / 2] << "\n";
+      std::cout << prefix << "_P95_MAC_DELAY_US: " << delays[(size_t)(n * 0.95)] << "\n";
+      std::cout << prefix << "_P99_MAC_DELAY_US: " << delays[(size_t)(n * 0.99)] << "\n";
+    }
+  };
+  emitAcStats("VO", voAc, voiceMacDelayUs);
+  emitAcStats("VI", viAc, videoMacDelayUs);
+
+  // Per-STA-type × per-AC split delay summary
+  auto emitSplit = [&](const char* prefix, std::vector<double>& v) {
+    std::cout << prefix << "_COUNT: " << v.size() << "\n";
+    if (v.empty()) return;
+    double sum = 0.0;
+    for (double d : v) sum += d;
+    std::cout << prefix << "_AVG_MAC_DELAY_US: " << (sum / v.size()) << "\n";
+    std::sort(v.begin(), v.end());
+    size_t n = v.size();
+    std::cout << prefix << "_MEDIAN_MAC_DELAY_US: " << v[n / 2] << "\n";
+    std::cout << prefix << "_P95_MAC_DELAY_US: " << v[(size_t)(n * 0.95)] << "\n";
+    std::cout << prefix << "_P99_MAC_DELAY_US: " << v[(size_t)(n * 0.99)] << "\n";
+  };
+  emitSplit("PEDCA_STA_VO", pedcaStaVoMacDelayVec);
+  emitSplit("PEDCA_STA_VI", pedcaStaViMacDelayVec);
+  emitSplit("LEGACY_STA_VO", legacyStaVoMacDelayVec);
+  emitSplit("LEGACY_STA_VI", legacyStaViMacDelayVec);
   std::cout << "--- EXTENDED_STATS_END ---\n";
+
+  // ── Per-DS-CTS Backoff Log Dump ──
+  if (!backoffLogOutput.empty()) {
+    std::ofstream blog(backoffLogOutput, std::ios::out | std::ios::trunc);
+    if (blog.is_open()) {
+      blog << "sta_id,ds_cts_end_us,gap_us,backoff_slots,outcome\n";
+      uint64_t totalRecords = 0;
+      for (uint32_t i = 0; i < nPedcaSta; ++i) {
+        Ptr<WifiNetDevice> wDev = DynamicCast<WifiNetDevice>(staDevices.Get(i));
+        if (!wDev) continue;
+        auto qFem = DynamicCast<QosFrameExchangeManager>(wDev->GetMac()->GetFrameExchangeManager(0));
+        if (!qFem) continue;
+        const auto& records = qFem->GetPedcaAttempts();
+        for (const auto& r : records) {
+          blog << i << "," << r.dsCtsEndUs << "," << r.gapUs << ","
+               << r.backoffSlots << "," << r.outcome << "\n";
+          totalRecords++;
+        }
+      }
+      blog.close();
+      std::cout << "Backoff log CSV saved: " << backoffLogOutput
+                << " (" << totalRecords << " records)\n";
+    } else {
+      std::cout << "Backoff log CSV save failed: " << backoffLogOutput << "\n";
+    }
+  }
+
+  // ── PHY TX events log ──
+  if (!txEventLogOutput.empty()) {
+    std::ofstream tlog(txEventLogOutput, std::ios::out | std::ios::trunc);
+    if (tlog.is_open()) {
+      tlog << "time_us,node_id,frame_type,size_bytes\n";
+      for (const auto& e : g_txEvents) {
+        tlog << e.timeUs << "," << e.nodeId << "," << e.frameType << "," << e.size << "\n";
+      }
+      tlog.close();
+      std::cout << "TX event log CSV saved: " << txEventLogOutput
+                << " (" << g_txEvents.size() << " events)\n";
+    } else {
+      std::cout << "TX event log save failed: " << txEventLogOutput << "\n";
+    }
+  }
 
   Simulator::Destroy();
   return 0;

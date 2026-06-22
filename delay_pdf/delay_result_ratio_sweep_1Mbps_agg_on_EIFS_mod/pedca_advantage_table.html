@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: 'Arial', sans-serif; margin: 10px; background: #f0f4f8; }
+  h2 { text-align: center; font-size: 16px; color: #1a237e; margin: 6px 0; }
+  .subtitle { text-align: center; font-size: 11px; color: #555; margin-bottom: 8px; }
+  .container { display: flex; gap: 10px; justify-content: center; }
+  table { border-collapse: collapse; font-size: 11px; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+  th { background: #1a237e; color: white; padding: 5px 7px; text-align: center; font-size: 11px; }
+  td { padding: 3px 7px; text-align: center; border-bottom: 1px solid #e0e0e0; }
+  tr:nth-child(even) { background: #f5f5f5; }
+  .no-adv { color: #bbb; }
+  .low { color: #f57c00; font-weight: bold; }
+  .mid { color: #388e3c; font-weight: bold; }
+  .high { color: #1565c0; font-weight: bold; }
+  .veryhigh { color: #b71c1c; font-weight: bold; }
+  .legend { text-align: center; font-size: 10px; color: #555; margin-top: 6px; }
+  .note { text-align: center; font-size: 10px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h2>Best P-EDCA Ratio vs. MAC Delay Reduction (1 Mbps, Aggregation ON)</h2>
+<div class="subtitle">Comparison of MAC Delay reduction (P99 / P95) between 0% P-EDCA (pure EDCA) and the best-performing P-EDCA ratio</div>
+<div class="container">
+<table>
+  <tr>
+    <th>nSta</th>
+    <th>Best<br>P-EDCA Ratio</th>
+    <th>P99 @ 0%<br>(µs)</th>
+    <th>P99↓</th>
+    <th>P95↓</th>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>548</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>802</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1162</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>758</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1412</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="low">0.7%</span></td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1232</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1512</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>9</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1838</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>10</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>1818</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>11</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>2128</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>12</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>3062</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>13</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>3558</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>14</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>4372</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>15</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>4802</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>16</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>5938</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>17</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>8102</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>18</td>
+    <td><b>100%</b></td>
+    <td>10208</td>
+    <td><span class="low">2.3%</span></td>
+    <td><span class="no-adv">≈ 0%</span></td>
+  </tr>
+  <tr>
+    <td>19</td>
+    <td><b>80%</b></td>
+    <td>12572</td>
+    <td><span class="low">1.7%</span></td>
+    <td><span class="low">0.8%</span></td>
+  </tr>
+  <tr>
+    <td>20</td>
+    <td><b>80%</b></td>
+    <td>13638</td>
+    <td><span class="low">3.5%</span></td>
+    <td><span class="low">1.7%</span></td>
+  </tr>
+  <tr>
+    <td>21</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>14722</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="low">2.1%</span></td>
+  </tr>
+  <tr>
+    <td>22</td>
+    <td><b>100%</b></td>
+    <td>16078</td>
+    <td><span class="mid">6.6%</span></td>
+    <td><span class="mid">11.9%</span></td>
+  </tr>
+  <tr>
+    <td>23</td>
+    <td><b>60%</b></td>
+    <td>17558</td>
+    <td><span class="mid">6.5%</span></td>
+    <td><span class="veryhigh">20.1%</span></td>
+  </tr>
+  <tr>
+    <td>24</td>
+    <td><b>100%</b></td>
+    <td>18322</td>
+    <td><span class="mid">8.6%</span></td>
+    <td><span class="veryhigh">27.8%</span></td>
+  </tr>
+  <tr>
+    <td>25</td>
+    <td><b>60%</b></td>
+    <td>18252</td>
+    <td><span class="low">4.8%</span></td>
+    <td><span class="veryhigh">21.6%</span></td>
+  </tr>
+  <tr>
+    <td>26</td>
+    <td><b>80%</b></td>
+    <td>17852</td>
+    <td><span class="low">2.5%</span></td>
+    <td><span class="high">19.8%</span></td>
+  </tr>
+</table>
+<table>
+  <tr>
+    <th>nSta</th>
+    <th>Best<br>P-EDCA Ratio</th>
+    <th>P99 @ 0%<br>(µs)</th>
+    <th>P99↓</th>
+    <th>P95↓</th>
+  </tr>
+  <tr>
+    <td>27</td>
+    <td><b>100%</b></td>
+    <td>19138</td>
+    <td><span class="mid">7.8%</span></td>
+    <td><span class="veryhigh">29.2%</span></td>
+  </tr>
+  <tr>
+    <td>28</td>
+    <td><b>100%</b></td>
+    <td>19982</td>
+    <td><span class="mid">9.1%</span></td>
+    <td><span class="veryhigh">27.2%</span></td>
+  </tr>
+  <tr>
+    <td>29</td>
+    <td><b>100%</b></td>
+    <td>19502</td>
+    <td><span class="high">13.9%</span></td>
+    <td><span class="veryhigh">32.7%</span></td>
+  </tr>
+  <tr>
+    <td>30</td>
+    <td><b>40%</b></td>
+    <td>20922</td>
+    <td><span class="high">12.3%</span></td>
+    <td><span class="veryhigh">25.4%</span></td>
+  </tr>
+  <tr>
+    <td>31</td>
+    <td><b>80%</b></td>
+    <td>19888</td>
+    <td><span class="high">16.1%</span></td>
+    <td><span class="veryhigh">32.4%</span></td>
+  </tr>
+  <tr>
+    <td>32</td>
+    <td><b>100%</b></td>
+    <td>19678</td>
+    <td><span class="low">3.4%</span></td>
+    <td><span class="veryhigh">21.6%</span></td>
+  </tr>
+  <tr>
+    <td>33</td>
+    <td><b>60%</b></td>
+    <td>19982</td>
+    <td><span class="mid">7.1%</span></td>
+    <td><span class="veryhigh">21.7%</span></td>
+  </tr>
+  <tr>
+    <td>34</td>
+    <td><b>100%</b></td>
+    <td>21252</td>
+    <td><span class="high">17.1%</span></td>
+    <td><span class="veryhigh">36.4%</span></td>
+  </tr>
+  <tr>
+    <td>35</td>
+    <td><b>100%</b></td>
+    <td>20718</td>
+    <td><span class="mid">8.7%</span></td>
+    <td><span class="veryhigh">27.1%</span></td>
+  </tr>
+  <tr>
+    <td>36</td>
+    <td><b>100%</b></td>
+    <td>20832</td>
+    <td><span class="mid">10.0%</span></td>
+    <td><span class="veryhigh">26.4%</span></td>
+  </tr>
+  <tr>
+    <td>37</td>
+    <td><b>80%</b></td>
+    <td>21228</td>
+    <td><span class="mid">10.6%</span></td>
+    <td><span class="veryhigh">26.4%</span></td>
+  </tr>
+  <tr>
+    <td>38</td>
+    <td><b>80%</b></td>
+    <td>21118</td>
+    <td><span class="mid">11.7%</span></td>
+    <td><span class="veryhigh">26.9%</span></td>
+  </tr>
+  <tr>
+    <td>39</td>
+    <td><b>80%</b></td>
+    <td>20988</td>
+    <td><span class="mid">5.8%</span></td>
+    <td><span class="high">19.4%</span></td>
+  </tr>
+  <tr>
+    <td>40</td>
+    <td><b>100%</b></td>
+    <td>21308</td>
+    <td><span class="high">13.8%</span></td>
+    <td><span class="veryhigh">33.8%</span></td>
+  </tr>
+  <tr>
+    <td>41</td>
+    <td><b>100%</b></td>
+    <td>20232</td>
+    <td><span class="mid">7.7%</span></td>
+    <td><span class="veryhigh">25.0%</span></td>
+  </tr>
+  <tr>
+    <td>42</td>
+    <td><b>100%</b></td>
+    <td>20502</td>
+    <td><span class="mid">11.9%</span></td>
+    <td><span class="veryhigh">31.1%</span></td>
+  </tr>
+  <tr>
+    <td>43</td>
+    <td><b>100%</b></td>
+    <td>20812</td>
+    <td><span class="mid">6.1%</span></td>
+    <td><span class="veryhigh">23.3%</span></td>
+  </tr>
+  <tr>
+    <td>44</td>
+    <td><b>40%</b></td>
+    <td>21662</td>
+    <td><span class="mid">6.3%</span></td>
+    <td><span class="high">18.6%</span></td>
+  </tr>
+  <tr>
+    <td>45</td>
+    <td><b>100%</b></td>
+    <td>21848</td>
+    <td><span class="veryhigh">20.6%</span></td>
+    <td><span class="veryhigh">41.8%</span></td>
+  </tr>
+  <tr>
+    <td>46</td>
+    <td><b>100%</b></td>
+    <td>21328</td>
+    <td><span class="mid">11.5%</span></td>
+    <td><span class="veryhigh">30.6%</span></td>
+  </tr>
+  <tr>
+    <td>47</td>
+    <td><b>100%</b></td>
+    <td>21432</td>
+    <td><span class="high">13.0%</span></td>
+    <td><span class="veryhigh">33.5%</span></td>
+  </tr>
+  <tr>
+    <td>48</td>
+    <td><b>80%</b></td>
+    <td>21018</td>
+    <td><span class="high">16.9%</span></td>
+    <td><span class="veryhigh">33.0%</span></td>
+  </tr>
+  <tr>
+    <td>49</td>
+    <td><span class="no-adv">— (No Adv.)</span></td>
+    <td>19788</td>
+    <td><span class="no-adv">≈ 0%</span></td>
+    <td><span class="mid">9.2%</span></td>
+  </tr>
+  <tr>
+    <td>50</td>
+    <td><b>80%</b></td>
+    <td>19968</td>
+    <td><span class="mid">6.1%</span></td>
+    <td><span class="veryhigh">20.8%</span></td>
+  </tr>
+</table>
+</div>
+<div class="legend">
+  Color indicates P99 improvement level:
+  <span class="no-adv">■</span> ≈0% (No advantage) &nbsp;
+  <span class="low">■</span> &lt;5% &nbsp;
+  <span class="mid">■</span> 5–12% &nbsp;
+  <span class="high">■</span> 12–20% &nbsp;
+  <span class="veryhigh">■</span> &gt;20%
+</div>
+<div class="note">
+  Best P-EDCA Ratio = the ratio that minimizes P99 MAC Delay (shown as "No Adv." if no meaningful improvement over 0%)<br>
+  nSta 2–17: P-EDCA shows no significant advantage; nSta ≥ 22: 60%–100% P-EDCA clearly reduces delay (P99 up to −20.6%, P95 up to −41.8%)
+</div>
+</body>
+</html>

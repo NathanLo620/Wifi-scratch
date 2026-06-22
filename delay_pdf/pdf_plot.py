@@ -49,12 +49,12 @@ SIM_TIME        = 10.0                                 # Simulation duration (s)
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
 MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.2))  # Keep CPU near saturation
 N_RUNS          = 10                                    # Runs to average
-SIM_BINARY      = "scratch/pedca_verification_nsta_mod.cc" # Single unified binary
+SIM_BINARY      = "scratch/pedca_verification_nsta.cc" # Single unified binary
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
 NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
-OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_agg_off_D13")
+OUT_DIR = Path("/home/wmnlab/Desktop/ns-3.45/scratch/delay_pdf/delay_result_ratio_sweep_1Mbps_agg_on_EIFS_mod")
 
 # ── Force non-interactive backend ──
 import matplotlib
@@ -77,6 +77,9 @@ def csv_name(ratio: float, n_sta: int, data_rate: str, run_idx: int = None) -> s
 
 def combined_plot_name(n_sta: int, data_rate: str) -> str:
     return f"vo_delay_probability_nSta{n_sta}_{data_rate}.pdf"
+
+def edca_vs_pedca_cdf_name(n_sta: int, data_rate: str) -> str:
+    return f"edca_vs_pedca_cdf_nSta{n_sta}_{data_rate}.pdf"
 
 def log_name(n_sta: int, data_rate: str) -> str:
     return f"sim_log_nSta{n_sta}_{data_rate}.txt"
@@ -1193,6 +1196,205 @@ def _plot_single_nsta(args_tuple):
         return n_sta, False, str(e)
 
 
+# ──────── Percentile computation from histogram ────────────────────────
+
+def compute_percentiles_from_histogram(mids: list, probs: list,
+                                        percentiles: list) -> dict:
+    """
+    Compute delay percentiles from a probability histogram.
+    percentiles: list of floats in [0,1], e.g. [0.5, 0.95, 0.99, 0.999]
+    Returns {p: delay_us} dict.
+    """
+    total = sum(probs)
+    if total <= 0:
+        return {p: 0.0 for p in percentiles}
+
+    result = {}
+    targets = sorted(percentiles)
+    target_idx = 0
+    running = 0.0
+    for m, p in zip(mids, probs):
+        running += p
+        while target_idx < len(targets) and running / total >= targets[target_idx]:
+            result[targets[target_idx]] = m
+            target_idx += 1
+        if target_idx >= len(targets):
+            break
+
+    for pct in targets:
+        if pct not in result:
+            result[pct] = mids[-1] if mids else 0.0
+
+    return result
+
+
+# ──────── EDCA vs P-EDCA CDF Comparison per nSta ──────────────────────
+
+def plot_edca_vs_pedca_cdf(csv_dict: dict, out_path: Path, n_sta: int,
+                            data_rate: str, n_runs: int = 1,
+                            fig_width: float = 10.0,
+                            fig_height: float = 6.0,
+                            dpi: int = 200):
+    """
+    For a given nSta, compare EDCA (ratio=0.0) vs P-EDCA (ratio=1.0) MAC
+    delay CDF on the same figure.  Requires both ratio=0.0 and ratio=1.0
+    CSVs to exist in csv_dict.
+    """
+    edca_csv  = csv_dict.get(0.0)
+    pedca_csv = csv_dict.get(1.0)
+    if not edca_csv or not pedca_csv:
+        return
+
+    loaded = {}
+    all_series = []
+    global_xmin = float("inf")
+
+    for key, csv_path in (("edca", edca_csv), ("pedca", pedca_csv)):
+        if not csv_path or not csv_path.exists():
+            continue
+        try:
+            mids, probs, xmin, xmax, bw = load_histogram(csv_path)
+        except Exception:
+            continue
+        loaded[key] = (mids, probs, xmin)
+        all_series.append((mids, probs))
+        global_xmin = min(global_xmin, xmin)
+
+    if len(loaded) < 2:
+        return
+
+    x_95 = _compute_percentile_xlim(all_series, 0.95)
+    zoom_xmax = x_95 * 1.10 if x_95 != float("inf") else max(
+        max(v[0]) for v in loaded.values()
+    )
+
+    runs_label = f", avg of {n_runs} runs" if n_runs > 1 else ""
+    edca_color  = "#4C72B0"
+    pedca_color = "#C44E52"
+    pct_levels  = [0.5, 0.95, 0.99, 0.999]
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+    pct_summary_lines = []
+    for key, label, color in [("edca",  "EDCA (ratio=0%)",     edca_color),
+                                ("pedca", "P-EDCA (ratio=100%)", pedca_color)]:
+        if key not in loaded:
+            continue
+        mids, probs, _ = loaded[key]
+        full_total = sum(probs)
+        if full_total <= 0:
+            continue
+
+        cdf_mids, cdf_vals = [], []
+        running = 0.0
+        for m, p in zip(mids, probs):
+            running += p
+            if m <= zoom_xmax:
+                cdf_mids.append(m)
+                cdf_vals.append(running / full_total)
+        if not cdf_mids:
+            continue
+
+        ax.plot(cdf_mids, cdf_vals, linewidth=1.4, color=color, label=label)
+
+        # Compute percentiles
+        pcts = compute_percentiles_from_histogram(mids, probs, pct_levels)
+        pct_line = f"{label}: " + "  ".join(
+            f"P{int(p*1000) if p >= 0.999 else int(p*100)}={'P99.9' if p >= 0.999 else ''}{pcts[p]:.1f}µs"
+            for p in pct_levels
+        )
+        # Simpler formatting
+        parts = []
+        for p in pct_levels:
+            tag = "P99.9" if p == 0.999 else f"P{int(p*100)}"
+            parts.append(f"{tag}={pcts[p]:.1f}µs")
+        pct_summary_lines.append(f"{label}: " + "  ".join(parts))
+
+        # Draw vertical percentile markers
+        for p in pct_levels:
+            x_val = pcts[p]
+            if x_val <= zoom_xmax:
+                ax.axvline(x=x_val, color=color, linewidth=0.6,
+                           linestyle="--", alpha=0.5)
+
+    ax.set_xlim(global_xmin, zoom_xmax)
+    ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+    ax.set_xticks(ticks)
+    ax.set_ylim(0, 1.02)
+    ax.tick_params(axis="x", labelsize=8, rotation=45)
+    ax.set_xlabel("Delay (µs)", fontsize=10)
+    ax.set_ylabel("Cumulative Probability", fontsize=11)
+    ax.set_title(
+        f"EDCA vs P-EDCA MAC Delay CDF  —  nSta={n_sta}, {data_rate}{runs_label}",
+        fontsize=12, fontweight="bold"
+    )
+    ax.grid(True, alpha=0.3, linestyle="--")
+    ax.legend(loc="lower right", fontsize=10)
+
+    # Percentile annotation below the plot
+    if pct_summary_lines:
+        annotation = "\n".join(pct_summary_lines)
+        fig.text(0.01, 0.01, annotation, fontsize=7, va="bottom",
+                 family="monospace", color="#333333")
+
+    fig.tight_layout(rect=[0, 0.06 * len(pct_summary_lines), 1, 1])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(str(out_path), dpi=dpi)
+    plt.close(fig)
+
+
+def _plot_edca_vs_pedca_single_nsta(args_tuple):
+    csv_dict, out_pdf, n_sta, data_rate, n_runs, fw, fh, dpi = args_tuple
+    try:
+        plot_edca_vs_pedca_cdf(csv_dict, out_pdf, n_sta, data_rate, n_runs, fw, fh, dpi)
+        return n_sta, True, out_pdf.name
+    except Exception as e:
+        return n_sta, False, str(e)
+
+
+# ──────── Percentile Statistics Summary File ───────────────────────────
+
+def write_mac_delay_percentile_stats(nsta_list: list, ratios: list,
+                                      data_rate: str, n_runs: int,
+                                      out_path: Path):
+    """
+    Read all averaged histogram CSVs and write a summary of
+    P50 / P95 / P99 / P99.9 delay percentiles for every (nSta, ratio).
+    """
+    pct_levels = [0.5, 0.95, 0.99, 0.999]
+    pct_tags   = ["P50", "P95", "P99", "P99.9"]
+
+    with open(out_path, "w") as f:
+        f.write(f"{'='*110}\n")
+        f.write(f"  MAC Delay Percentile Statistics\n")
+        f.write(f"  dataRate={data_rate}  runs={n_runs} (averaged)\n")
+        f.write(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"{'='*110}\n\n")
+
+        # Header row
+        header_cols = ["nSta", "ratio"] + pct_tags
+        f.write("  " + "  ".join(f"{h:>10}" for h in header_cols) + "\n")
+        f.write("  " + "-" * (12 * len(header_cols)) + "\n")
+
+        for n_sta in sorted(nsta_list):
+            for ratio in ratios:
+                csv_path = OUT_DIR / csv_name(ratio, n_sta, data_rate)
+                if not csv_path.exists():
+                    continue
+                try:
+                    mids, probs, _, _, _ = load_histogram(csv_path)
+                except Exception:
+                    continue
+                pcts = compute_percentiles_from_histogram(mids, probs, pct_levels)
+                row = [f"{n_sta:>10}", f"{ratio:>10.0%}"] + [
+                    f"{pcts[p]:>10.1f}" for p in pct_levels
+                ]
+                f.write("  " + "  ".join(row) + "\n")
+            f.write("\n")
+
+    return out_path
+
+
 # ──────────────────────────── Main ───────────────────────────────────
 
 def main():
@@ -1277,6 +1479,52 @@ def main():
                 except Exception as e:
                     print(f"    ✗ nSta={n_sta_done}: {e}")
 
+    def generate_edca_vs_pedca_plots_parallel(nsta_list_plot):
+        """
+        For each nSta, plot EDCA (ratio=0%) vs P-EDCA (ratio=100%) delay CDF
+        side-by-side on the same figure.  Skipped if either ratio is absent.
+        """
+        if 0.0 not in ratios or 1.0 not in ratios:
+            print("  ⚠ Skipping EDCA vs P-EDCA CDF plots "
+                  "(need ratio=0.0 and ratio=1.0 in the sweep)")
+            return
+
+        plot_tasks = []
+        for n_sta in nsta_list_plot:
+            edca_p  = OUT_DIR / csv_name(0.0, n_sta, data_rate)
+            pedca_p = OUT_DIR / csv_name(1.0, n_sta, data_rate)
+            if edca_p.exists() and edca_p.stat().st_size > 10 \
+                    and pedca_p.exists() and pedca_p.stat().st_size > 10:
+                csv_dict = {0.0: edca_p, 1.0: pedca_p}
+                out_pdf = OUT_DIR / edca_vs_pedca_cdf_name(n_sta, data_rate)
+                plot_tasks.append(
+                    (csv_dict, out_pdf, n_sta, data_rate, n_runs,
+                     args.fig_width, args.fig_height, args.dpi)
+                )
+            else:
+                print(f"    ⚠ nSta={n_sta}: missing ratio=0% or 100% CSV, "
+                      f"skipping EDCA vs P-EDCA CDF")
+
+        if not plot_tasks:
+            return
+
+        print(f"  Plotting {len(plot_tasks)} EDCA vs P-EDCA CDF charts "
+              f"({plot_workers} workers)...")
+
+        with ThreadPoolExecutor(max_workers=plot_workers) as pexec:
+            futs = {pexec.submit(_plot_edca_vs_pedca_single_nsta, t): t[2]
+                    for t in plot_tasks}
+            for fut in as_completed(futs):
+                n_sta_done = futs[fut]
+                try:
+                    ns, ok, msg = fut.result()
+                    if ok:
+                        print(f"    ✔ {msg}")
+                    else:
+                        print(f"    ✗ nSta={ns}: {msg}")
+                except Exception as e:
+                    print(f"    ✗ nSta={n_sta_done}: {e}")
+
     if args.plot_only:
         # ── Plot-only mode ──
         for n_sta in nsta_list:
@@ -1323,6 +1571,21 @@ def main():
                 print(f"    ✔ {ratio_pdf.name}")
             else:
                 print(f"    ⚠ No P-EDCA Tx Ratio data found in {stats_path.name}")
+
+        # ── EDCA vs P-EDCA CDF comparison per nSta ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating EDCA vs P-EDCA CDF comparison plots...")
+        print(f"{'─'*60}")
+        generate_edca_vs_pedca_plots_parallel(nsta_list)
+
+        # ── MAC delay percentile statistics ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating MAC delay percentile statistics...")
+        print(f"{'─'*60}")
+        pct_stats_path = OUT_DIR / f"mac_delay_percentiles_{data_rate}.txt"
+        write_mac_delay_percentile_stats(nsta_list, ratios, data_rate, n_runs,
+                                          pct_stats_path)
+        print(f"    ✔ {pct_stats_path.name}  ({pct_stats_path.stat().st_size:,} bytes)")
 
     else:
         # ── Parallel simulation mode (flat task pool) ──
@@ -1424,6 +1687,21 @@ def main():
         else:
             print(f"    ⚠ No P-EDCA Tx Ratio data found")
 
+        # ── EDCA vs P-EDCA CDF comparison per nSta ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating EDCA vs P-EDCA CDF comparison plots...")
+        print(f"{'─'*60}")
+        generate_edca_vs_pedca_plots_parallel(nsta_list)
+
+        # ── MAC delay percentile statistics ──
+        print(f"\n{'─'*60}")
+        print(f"  Generating MAC delay percentile statistics...")
+        print(f"{'─'*60}")
+        pct_stats_path = OUT_DIR / f"mac_delay_percentiles_{data_rate}.txt"
+        write_mac_delay_percentile_stats(nsta_list, ratios, data_rate, n_runs,
+                                          pct_stats_path)
+        print(f"    ✔ {pct_stats_path.name}  ({pct_stats_path.stat().st_size:,} bytes)")
+
     elapsed_total = time.time() - t_total
 
     # ── Summary ──
@@ -1446,9 +1724,14 @@ def main():
     print(f"\n  Log files:")
     for f in sorted(OUT_DIR.glob(f"sim_log_*_{data_rate}.txt")):
         print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
+    for f in sorted(OUT_DIR.glob(f"edca_vs_pedca_cdf_*_{data_rate}.pdf")):
+        print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
     print(f"\n  Statistics comparison:")
     for f in sorted(OUT_DIR.glob(f"ratio_sweep_statistics_*.txt")):
         print(f"    {f.name}  ({f.stat().st_size:,} bytes)")
+    pct_stats = OUT_DIR / f"mac_delay_percentiles_{data_rate}.txt"
+    if pct_stats.exists():
+        print(f"    {pct_stats.name}  ({pct_stats.stat().st_size:,} bytes)")
     print(f"{'═'*60}\n")
 
 

@@ -1,0 +1,41 @@
+======================================================================
+ P-EDCA Backoff vs Failure Analysis (nSta=20, nPedca=1)
+======================================================================
+
+Total P-EDCA Stage 2 attempts (incl. deferrals): 2936
+
+--- Outcome Breakdown ---
+  SUCCESS           :  2371  (80.76 %)
+  RTS_COLLISION     :   231  ( 7.87 %)
+  RTS_CTS_TIMEOUT   :     0  ( 0.00 %)
+  TIMING_EXPIRED    :   334  (11.38 %)
+  DEFERRAL          :     0  ( 0.00 %)
+
+--- Gap (us) Statistics ---
+  count:  2936
+  min:    34.0
+  median: 81.0
+  mean:   240.2
+  P95:    806.0
+  max:    10583.0
+
+  Within NAV (<= 77 us):        1267  (43.15 %)
+  Unprotected (77-200 us):  1335  (45.47 %)
+  Stale (> 200 us):             334  (11.38 %)
+
+--- Failure Rate by Drawn Backoff Slot (CWmax=7) ---
+        slot   gap_us  total   succ   coll cts_to  fail_rate
+           0       34     87     87      0      0      0.00% (within NAV)
+           1       43    103    103      0      0      0.00% (within NAV)
+           2       52    360    359      1      0      0.28% (within NAV)
+           3       61    360    355      5      0      1.39% (within NAV)
+           4       70    352    349      3      0      0.85% (within NAV)
+           5       79    339    337      2      0      0.59% (UNPROTECTED)
+           6       88    371    369      2      0      0.54% (UNPROTECTED)
+           7       97    345    284     61      0     17.68% (UNPROTECTED)
+     7+pause      >97    285    128    157      0     55.09% (slot=7 + medium-busy stretched countdown)
+
+--- Failure Rate: NAV-protected vs Unprotected ---
+  Within NAV (<=77us)      : 9/1267 = 0.71 % failure
+  Unprotected (77-200us)   : 222/1335 = 16.63 % failure
+

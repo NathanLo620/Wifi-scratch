@@ -1389,6 +1389,120 @@ def plot_sta_type_delay_overlay(out_path: Path, data_rate: str,
     return out_path
 
 
+# ─────────── NEW: P-EDCA vs Legacy CDF Comparison (per n_pedca) ─────
+
+def plot_pedca_vs_legacy_cdf_per_count(out_path: Path, data_rate: str,
+                                       pedca_counts: list,
+                                       n_runs: int = 1,
+                                       fig_width: float = 10.0,
+                                       fig_height: float = 6.0,
+                                       dpi: int = 200):
+    """
+    For each n_pedca with 0 < n_pedca < N_STA, plot a single CDF figure
+    overlaying the P-EDCA-enabled STA CDF and the legacy EDCA STA CDF.
+    All pages are bundled into one multi-page PDF at out_path.
+    """
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    mixed_counts = [c for c in pedca_counts if 0 < c < N_STA]
+    if not mixed_counts:
+        return None
+
+    runs_label = f", avg of {n_runs} runs" if n_runs > 1 else ""
+    pedca_color  = "#C44E52"   # red-ish
+    legacy_color = "#4C72B0"   # blue-ish
+
+    any_written = False
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with PdfPages(str(out_path)) as pdf:
+        for n_pedca in mixed_counts:
+            pedca_csv  = OUT_DIR / pedca_sta_csv_name(n_pedca, data_rate)
+            legacy_csv = OUT_DIR / legacy_sta_csv_name(n_pedca, data_rate)
+
+            loaded = {}
+            for label_key, csv_path in (("pedca", pedca_csv),
+                                         ("legacy", legacy_csv)):
+                if not csv_path.exists():
+                    continue
+                try:
+                    mids, probs, xmin, xmax, bw = load_histogram(csv_path)
+                except Exception:
+                    continue
+                loaded[label_key] = (mids, probs, xmin)
+
+            if not loaded:
+                continue
+
+            all_series = [(v[0], v[1]) for v in loaded.values()]
+            x_95 = _compute_percentile_xlim(all_series, 0.95)
+            zoom_xmax = x_95 * 1.10 if x_95 != float("inf") else max(
+                max(v[0]) for v in loaded.values()
+            )
+            global_xmin = min(v[2] for v in loaded.values())
+
+            fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+            series_spec = [
+                ("pedca",  f"P-EDCA STAs (n={n_pedca})",         pedca_color),
+                ("legacy", f"Legacy EDCA STAs (n={N_STA - n_pedca})",
+                                                                legacy_color),
+            ]
+            plotted = False
+            for key, label, color in series_spec:
+                if key not in loaded:
+                    continue
+                mids, probs, _ = loaded[key]
+                full_total = sum(probs)
+                if full_total <= 0:
+                    continue
+                cdf_mids, cdf_vals = [], []
+                running = 0.0
+                for m, p in zip(mids, probs):
+                    running += p
+                    if m <= zoom_xmax:
+                        cdf_mids.append(m)
+                        cdf_vals.append(running / full_total)
+                if not cdf_mids:
+                    continue
+                ax.plot(cdf_mids, cdf_vals, linewidth=1.4,
+                        color=color, label=label)
+                plotted = True
+
+            if not plotted:
+                plt.close(fig)
+                continue
+
+            ax.set_xlim(global_xmin, zoom_xmax)
+            ticks = build_ticks(global_xmin, zoom_xmax, fig_width)
+            ax.set_xticks(ticks)
+            ax.set_ylim(0, 1.02)
+            ax.tick_params(axis="x", labelsize=8, rotation=45)
+            ax.set_xlabel("Delay (us)", fontsize=10)
+            ax.set_ylabel("Cumulative Probability", fontsize=11)
+            ax.set_title(
+                f"P-EDCA vs Legacy Delay CDF  —  "
+                f"n_pedca={n_pedca}, n_legacy={N_STA - n_pedca}, "
+                f"nSta={N_STA}, {data_rate}{runs_label}",
+                fontsize=12, fontweight="bold"
+            )
+            ax.grid(True, alpha=0.3, linestyle="--")
+            ax.legend(loc="lower right", fontsize=10)
+
+            fig.tight_layout()
+            pdf.savefig(fig, dpi=dpi)
+            plt.close(fig)
+            any_written = True
+
+    if not any_written:
+        try:
+            out_path.unlink()
+        except OSError:
+            pass
+        return None
+    return out_path
+
+
 # ─────────── NEW: Computed Metric Plots (Stats 3-7) ─────────────────
 
 def _compute_derived_metrics(stats_path: Path, pedca_counts: list) -> dict:
@@ -1792,6 +1906,17 @@ def main():
         print(f"    ✔ {pedca_overlay.name}")
     else:
         print(f"    ⚠ No data for P-EDCA STA delay overlay")
+
+    # 6b. [NEW] P-EDCA vs Legacy CDF comparison, one page per n_pedca
+    pvl_pdf = OUT_DIR / f"pedca_vs_legacy_cdf_per_count_{data_rate}.pdf"
+    result = plot_pedca_vs_legacy_cdf_per_count(
+        pvl_pdf, data_rate, pedca_counts, n_runs,
+        args.fig_width, 6.5, args.dpi
+    )
+    if result:
+        print(f"    ✔ {pvl_pdf.name}")
+    else:
+        print(f"    ⚠ No data for P-EDCA vs Legacy CDF comparison")
 
     # 7. Compute derived metrics (Stats 2-7) from the stats file
     derived = _compute_derived_metrics(stats_path, pedca_counts)
