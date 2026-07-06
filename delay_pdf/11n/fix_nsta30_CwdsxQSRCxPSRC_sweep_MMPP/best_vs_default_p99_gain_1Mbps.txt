@@ -1,0 +1,19 @@
+====================================================================================================
+  P99 Delay: Min-P99 combo vs Default (CWds=0,QSRC=2,PSRC=1) vs EDCA-only
+  nSta=30  dataRate=1Mbps  10 runs averaged
+  EDCA-only baseline P99 = 22132 µs
+====================================================================================================
+
+  STA Type     nPedca  Best Params      Min P99 Default P99  EDCA P99  Gain vs Def  Gain vs EDCA
+  ----------------------------------------------------------------------------------------------
+  All STAs          5  c0·q0·s3           22678       23308     22132        +2.7%         -2.5%
+  All STAs         15  c1·q0·s2           22122       25092     22132       +11.8%         +0.0%
+  All STAs         30  c1·q0·s2           21422       27658     22132       +22.5%         +3.2%
+  P-EDCA STAs       5  c0·q0·s3            5718       19908     22132       +71.3%        +74.2%
+  P-EDCA STAs      15  c0·q0·s3           16842       24752     22132       +32.0%        +23.9%
+  P-EDCA STAs      30  c1·q0·s2           21428       27658     22132       +22.5%         +3.2%
+  Legacy STAs       5  c0·q4·s3           23128       23688     22132        +2.4%         -4.5%
+  Legacy STAs      15  c1·q0·s2           23728       25358     22132        +6.4%         -7.2%
+
+  Gain = (reference_P99 - min_P99) / reference_P99 × 100  (positive = min combo is better)
+  Note: 'gain vs Def' positive means the min-P99 combo beats the default parameter set.
