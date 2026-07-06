@@ -1,7 +1,7 @@
 /*
  * P-EDCA Verification: N STA Scenario  (802.11be / EHT)
  *
- * Standard: WIFI_STANDARD_80211be, EhtMcs7 data rate, 5GHz 20MHz (ch36).
+ * Standard: WIFI_STANDARD_80211be, EhtMcs5 data rate, 5GHz 20MHz (ch36), GI 1600 ns.
  *
  * Use Case:
  * - Scalability test: Simulate N STAs
@@ -358,8 +358,9 @@ int main(int argc, char* argv[])
 
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211be);
+  wifi.ConfigHeOptions("GuardInterval", TimeValue(NanoSeconds(1600)));
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("EhtMcs7"),
+                               "DataMode", StringValue("EhtMcs5"),
                                "ControlMode", StringValue("OfdmRate6Mbps"));
   
   // RTS/CTS
