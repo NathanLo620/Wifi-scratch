@@ -179,6 +179,7 @@ int main(int argc, char* argv[])
   bool enableRts = true;
   bool enableAggregation = true;
   bool verbose = false;
+  bool dumpPhy = false;       // print PHY data-rate & PPDU airtime (EHT vs HT) then exit
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
@@ -195,6 +196,7 @@ int main(int argc, char* argv[])
   cmd.AddValue("simTime","Simulation time (seconds)", simTime);
   cmd.AddValue("dataRate","Data rate (e.g., 0.5Mbps)", dataRate);
   cmd.AddValue("verbose","Enable logging", verbose);
+  cmd.AddValue("dumpPhy","Print PHY data-rate & PPDU airtime (EHT vs HT) and exit", dumpPhy);
   cmd.AddValue("enableAggregation","Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
   cmd.AddValue("voicePdfBinUs","VO delay PDF bin width (microseconds)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput","Output CSV file for VO delay PDF", voicePdfOutput);
@@ -248,6 +250,34 @@ int main(int argc, char* argv[])
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
                                "DataMode", StringValue("EhtMcs5"),
                                "ControlMode", StringValue("OfdmRate6Mbps"));
+
+  // ── PHY diagnostic: confirm EHT vs HT data rate & PPDU airtime, then exit ──
+  if (dumpPhy)
+  {
+    auto report = [&](const std::string& tag, const std::string& mcs,
+                      WifiPreamble pre, Time gi)
+    {
+      WifiMode mode(mcs);
+      double rate = mode.GetDataRate(20 /*MHz*/, gi, 1 /*nss*/);
+      WifiTxVector tv1(mode, 0, pre, gi, 1, 1, 0, 20, false /*no agg*/);
+      WifiTxVector tvA(mode, 0, pre, gi, 1, 1, 0, 20, true  /*agg*/);
+      Time d1  = WifiPhy::CalculateTxDuration(payloadSize, tv1, WIFI_PHY_BAND_5GHZ);
+      Time d4  = WifiPhy::CalculateTxDuration(4  * payloadSize, tvA, WIFI_PHY_BAND_5GHZ);
+      Time d16 = WifiPhy::CalculateTxDuration(16 * payloadSize, tvA, WIFI_PHY_BAND_5GHZ);
+      std::cout << tag << "  " << mcs << "  GI=" << gi.GetNanoSeconds() << "ns"
+                << "  dataRate=" << rate / 1e6 << " Mbps"
+                << "  | PPDU airtime:  1x" << payloadSize << "B=" << d1.GetMicroSeconds() << "us"
+                << "  4x=" << d4.GetMicroSeconds() << "us"
+                << "  16x=" << d16.GetMicroSeconds() << "us"
+                << "  | per-MPDU@16x=" << d16.GetMicroSeconds() / 16.0 << "us\n";
+    };
+    std::cout << "\n===== PHY airtime diagnostic (payloadSize=" << payloadSize
+              << "B, 20MHz, 1SS, 5GHz) =====\n";
+    report("EHT ", "EhtMcs5", WIFI_PREAMBLE_EHT_MU, NanoSeconds(1600));
+    report("HT  ", "HtMcs7",  WIFI_PREAMBLE_HT_MF,  NanoSeconds(800));
+    std::cout << "==========================================================\n\n";
+    return 0;
+  }
   
   // RTS/CTS
   if (!enableRts)

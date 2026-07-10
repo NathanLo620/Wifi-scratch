@@ -57,7 +57,7 @@ SIM_BINARY      = "scratch/pedca_nsta_poisson_11be.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
-NS3_DIR = Path("/home/nathanlo/ns-3.45")
+NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
 OUT_DIR = Path(__file__).resolve().parent
 # Header that holds the QSRC threshold (PEDCA_RETRY_THRESHOLD).
 # Python patches this single line, runs `./ns3 build`, sweeps, and restores

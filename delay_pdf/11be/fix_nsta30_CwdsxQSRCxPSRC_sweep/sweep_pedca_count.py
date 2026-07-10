@@ -51,13 +51,13 @@ BASELINE_NPEDCA = 0                                     # EDCA-only baseline = 0
 DATA_RATE       = "1Mbps"
 SIM_TIME        = 10.0
 BIN_WIDTH       = 5                                    # VO delay PDF bin width (µs)
-MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 1.5))
+MAX_WORKERS     = 4 if not os.cpu_count() else max(1, int(os.cpu_count() // 2))
 N_RUNS          = 10
 SIM_BINARY      = "scratch/pedca_verification_nsta_11be.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
-NS3_DIR = Path("/home/wmnlab/Desktop/ns-3.45")
+NS3_DIR = Path("/home/nathanlo/ns-3.45")
 OUT_DIR = Path(__file__).resolve().parent
 # Header that holds the QSRC threshold (PEDCA_RETRY_THRESHOLD).
 # Python patches this single line, runs `./ns3 build`, sweeps, and restores
