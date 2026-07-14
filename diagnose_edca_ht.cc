@@ -1,7 +1,5 @@
 /*
- * P-EDCA Verification: N STA Scenario  (802.11be / EHT)
- *
- * Standard: WIFI_STANDARD_80211be, EhtMcs5 data rate, 5GHz 20MHz (ch36), GI 1600 ns.
+ * P-EDCA Verification: N STA Scenario
  *
  * Use Case:
  * - Scalability test: Simulate N STAs
@@ -41,6 +39,16 @@ NS_LOG_COMPONENT_DEFINE("PedcaVerificationNSta");
 static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
+static std::vector<double> g_appDelayUs;
+
+static void
+ServerRx(Ptr<const Packet> packet)
+{
+    auto copy = packet->Copy();
+    SeqTsHeader header;
+    copy->RemoveHeader(header);
+    g_appDelayUs.push_back((Simulator::Now() - header.GetTs()).GetMicroSeconds());
+}
 
 
 
@@ -178,11 +186,7 @@ int main(int argc, char* argv[])
   uint32_t payloadSize = 1000;
   bool enableRts = true;
   bool enableAggregation = true;
-  uint32_t baBufferSize = 64;    // Block Ack window size, in MPDUs (match HT)
-  uint32_t maxAmpduSize = 65535; // Maximum A-MPDU size, in bytes
-  uint32_t maxAmsduSize = 7935;  // Maximum A-MSDU size, in bytes
   bool verbose = false;
-  bool dumpPhy = false;       // print PHY data-rate & PPDU airtime (EHT vs HT) then exit
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
@@ -199,11 +203,8 @@ int main(int argc, char* argv[])
   cmd.AddValue("simTime","Simulation time (seconds)", simTime);
   cmd.AddValue("dataRate","Data rate (e.g., 0.5Mbps)", dataRate);
   cmd.AddValue("verbose","Enable logging", verbose);
-  cmd.AddValue("dumpPhy","Print PHY data-rate & PPDU airtime (EHT vs HT) and exit", dumpPhy);
+  cmd.AddValue("enableRts","Enable RTS/CTS for every data transmission", enableRts);
   cmd.AddValue("enableAggregation","Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
-  cmd.AddValue("baBufferSize","Block Ack buffer/window size in MPDUs (use 64 to match HT)", baBufferSize);
-  cmd.AddValue("maxAmpduSize","Maximum A-MPDU size in bytes when aggregation is enabled", maxAmpduSize);
-  cmd.AddValue("maxAmsduSize","Maximum A-MSDU size in bytes when aggregation is enabled", maxAmsduSize);
   cmd.AddValue("voicePdfBinUs","VO delay PDF bin width (microseconds)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput","Output CSV file for VO delay PDF", voicePdfOutput);
   cmd.AddValue("pedcaStaDelayOutput","CSV for P-EDCA STA delay PDF", pedcaStaDelayOutput);
@@ -251,39 +252,10 @@ int main(int argc, char* argv[])
   phy.Set("ChannelSettings", StringValue("{36, 20, BAND_5GHZ, 0}")); // 5GHz
 
   WifiHelper wifi;
-  wifi.SetStandard(WIFI_STANDARD_80211be);
-  wifi.ConfigHeOptions("GuardInterval", TimeValue(NanoSeconds(1600)));
+  wifi.SetStandard(WIFI_STANDARD_80211n);
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("EhtMcs5"),
+                               "DataMode", StringValue("HtMcs7"),
                                "ControlMode", StringValue("OfdmRate6Mbps"));
-
-  // ── PHY diagnostic: confirm EHT vs HT data rate & PPDU airtime, then exit ──
-  if (dumpPhy)
-  {
-    auto report = [&](const std::string& tag, const std::string& mcs,
-                      WifiPreamble pre, Time gi)
-    {
-      WifiMode mode(mcs);
-      double rate = mode.GetDataRate(20 /*MHz*/, gi, 1 /*nss*/);
-      WifiTxVector tv1(mode, 0, pre, gi, 1, 1, 0, 20, false /*no agg*/);
-      WifiTxVector tvA(mode, 0, pre, gi, 1, 1, 0, 20, true  /*agg*/);
-      Time d1  = WifiPhy::CalculateTxDuration(payloadSize, tv1, WIFI_PHY_BAND_5GHZ);
-      Time d4  = WifiPhy::CalculateTxDuration(4  * payloadSize, tvA, WIFI_PHY_BAND_5GHZ);
-      Time d16 = WifiPhy::CalculateTxDuration(16 * payloadSize, tvA, WIFI_PHY_BAND_5GHZ);
-      std::cout << tag << "  " << mcs << "  GI=" << gi.GetNanoSeconds() << "ns"
-                << "  dataRate=" << rate / 1e6 << " Mbps"
-                << "  | PPDU airtime:  1x" << payloadSize << "B=" << d1.GetMicroSeconds() << "us"
-                << "  4x=" << d4.GetMicroSeconds() << "us"
-                << "  16x=" << d16.GetMicroSeconds() << "us"
-                << "  | per-MPDU@16x=" << d16.GetMicroSeconds() / 16.0 << "us\n";
-    };
-    std::cout << "\n===== PHY airtime diagnostic (payloadSize=" << payloadSize
-              << "B, 20MHz, 1SS, 5GHz) =====\n";
-    report("EHT ", "EhtMcs5", WIFI_PREAMBLE_EHT_MU, NanoSeconds(1600));
-    report("HT  ", "HtMcs7",  WIFI_PREAMBLE_HT_MF,  NanoSeconds(800));
-    std::cout << "==========================================================\n\n";
-    return 0;
-  }
   
   // RTS/CTS
   if (!enableRts)
@@ -294,18 +266,17 @@ int main(int argc, char* argv[])
   // Queue size: 400 packets
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
 
-  // BA window is a count of MPDUs; A-MPDU/A-MSDU limits are byte counts.
-  Config::SetDefault("ns3::WifiMac::MpduBufferSize", UintegerValue(baBufferSize));
-  const uint32_t effectiveMaxAmpduSize = enableAggregation ? maxAmpduSize : 0;
-  const uint32_t effectiveMaxAmsduSize = enableAggregation ? maxAmsduSize : 0;
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
+  // Aggregation control. Disabled by default to preserve legacy verification behavior.
+  const uint32_t maxAmpduSize = enableAggregation ? 65535 : 0;
+  const uint32_t maxAmsduSize = enableAggregation ? 7935 : 0;
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(maxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(maxAmsduSize));
   
   Ssid ssid = Ssid("wifi-backoff-vo");
 
@@ -384,6 +355,7 @@ int main(int argc, char* argv[])
   constexpr uint8_t voTos = 0xC0;
   UdpServerHelper server(basePort + voAc);
   ApplicationContainer serverApp = server.Install(wifiApNode.Get(0));
+  serverApp.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&ServerRx));
   serverApp.Start(Seconds(0.5));
   serverApp.Stop(Seconds(simTime));
   
@@ -451,6 +423,24 @@ int main(int argc, char* argv[])
 
   Simulator::Stop(Seconds(simTime + 1.0));
   Simulator::Run();
+
+  uint64_t appTxBytes = 0;
+  for (uint32_t i = 0; i < wifiStaNodes.GetN(); ++i) {
+    for (uint32_t j = 0; j < wifiStaNodes.Get(i)->GetNApplications(); ++j) {
+      if (auto client = DynamicCast<UdpClient>(wifiStaNodes.Get(i)->GetApplication(j))) {
+        appTxBytes += client->GetTotalTx();
+      }
+    }
+  }
+  auto udpServer = DynamicCast<UdpServer>(serverApp.Get(0));
+  std::sort(g_appDelayUs.begin(), g_appDelayUs.end());
+  double appP99Us = g_appDelayUs.empty()
+                        ? 0.0
+                        : g_appDelayUs[static_cast<std::size_t>(
+                              std::ceil(0.99 * g_appDelayUs.size())) - 1];
+  std::cout << "APP_TX_PACKETS: " << appTxBytes / payloadSize << "\n"
+            << "APP_RX_PACKETS: " << udpServer->GetReceived() << "\n"
+            << "APP_P99_DELAY_US: " << appP99Us << "\n";
   
   // ---------------------- WifiTxStatsHelper Output ----------------------
   double duration = simTime - warmupTime;
