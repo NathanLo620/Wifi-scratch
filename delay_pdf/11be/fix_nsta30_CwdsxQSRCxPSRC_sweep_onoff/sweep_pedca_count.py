@@ -57,8 +57,10 @@ SIM_BINARY      = "scratch/pedca_nsta_onoff_11be.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
-NS3_DIR = Path("/home/nathanlo/ns-3.45")
 OUT_DIR = Path(__file__).resolve().parent
+NS3_DIR = Path(
+    os.environ.get("NS3_DIR", str(Path(__file__).resolve().parents[4]))
+).resolve()
 # Header that holds the QSRC threshold (PEDCA_RETRY_THRESHOLD).
 # Python patches this single line, runs `./ns3 build`, sweeps, and restores
 # the original value in the finally block. The wifi model is not edited

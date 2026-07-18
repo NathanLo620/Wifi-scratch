@@ -41,6 +41,11 @@ NS_LOG_COMPONENT_DEFINE("PedcaVerificationNSta");
 static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
+static uint64_t g_pedcaAppTx = 0;
+static uint64_t g_pedcaAppRx = 0;
+static uint64_t g_legacyAppTx = 0;
+static uint64_t g_legacyAppRx = 0;
+static std::set<Ipv4Address> g_pedcaStaAddresses;
 
 
 
@@ -55,6 +60,28 @@ static std::string FrameTypeStr(const WifiMacHeader& hdr)
     if (hdr.IsMgt()) return "MGT";
     if (hdr.IsCtl()) return "CTL";
     return "OTHER";
+}
+
+static void
+ApplicationTxTrace(bool pedcaSta, Ptr<const Packet> /*packet*/)
+{
+    if (Simulator::Now() < Seconds(g_warmupTime) || Simulator::Now() >= Seconds(g_simTime))
+    {
+        return;
+    }
+    (pedcaSta ? g_pedcaAppTx : g_legacyAppTx)++;
+}
+
+static void
+ApplicationRxTrace(Ptr<const Packet> /*packet*/, const Address& from, const Address& /*local*/)
+{
+    if (Simulator::Now() < Seconds(g_warmupTime) || Simulator::Now() >= Seconds(g_simTime) ||
+        !InetSocketAddress::IsMatchingType(from))
+    {
+        return;
+    }
+    const auto source = InetSocketAddress::ConvertFrom(from).GetIpv4();
+    (g_pedcaStaAddresses.count(source) ? g_pedcaAppRx : g_legacyAppRx)++;
 }
 
 static std::string FrameInfoFromMpdu(Ptr<const Packet> mpdu)
@@ -378,12 +405,19 @@ int main(int argc, char* argv[])
   Ipv4InterfaceContainer apIf = address.Assign(apDevices);
   Ipv4InterfaceContainer staIf = address.Assign(staDevices);
 
+  for (uint32_t i = 0; i < nPedcaSta; ++i)
+  {
+      g_pedcaStaAddresses.insert(staIf.GetAddress(i));
+  }
+
   // Traffic: UDP Server on AP (VO only)
   uint16_t basePort = 5000;
   constexpr uint8_t voAc = 3;
   constexpr uint8_t voTos = 0xC0;
   UdpServerHelper server(basePort + voAc);
   ApplicationContainer serverApp = server.Install(wifiApNode.Get(0));
+  serverApp.Get(0)->TraceConnectWithoutContext("RxWithAddresses",
+                                               MakeCallback(&ApplicationRxTrace));
   serverApp.Start(Seconds(0.5));
   serverApp.Stop(Seconds(simTime));
   
@@ -403,6 +437,9 @@ int main(int argc, char* argv[])
       client.SetAttribute("Tos", UintegerValue(voTos));
       
       ApplicationContainer clientApp = client.Install(wifiStaNodes.Get(i));
+      clientApp.Get(0)->TraceConnectWithoutContext(
+          "Tx",
+          MakeBoundCallback(&ApplicationTxTrace, i < nPedcaSta));
       double start = 0.5 + startRv->GetValue(0.0, 0.5);
       clientApp.Start(Seconds(start));
       clientApp.Stop(Seconds(simTime));
@@ -559,6 +596,18 @@ int main(int argc, char* argv[])
   std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
   std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";
 
+  auto printApplicationLoss = [](const std::string& label, uint64_t tx, uint64_t rx) {
+      const double loss = tx > 0 ? 100.0 * static_cast<double>(tx - std::min(tx, rx)) / tx : 0.0;
+      std::cout << label << ": Tx=" << tx << " Rx=" << rx << " Loss=" << loss << " %\n";
+  };
+  std::cout << "--- UDP Application Statistics (measurement interval) ---\n";
+  printApplicationLoss("P-EDCA STAs", g_pedcaAppTx, g_pedcaAppRx);
+  printApplicationLoss("Legacy STAs", g_legacyAppTx, g_legacyAppRx);
+  printApplicationLoss("All STAs",
+                       g_pedcaAppTx + g_legacyAppTx,
+                       g_pedcaAppRx + g_legacyAppRx);
+  std::cout << "\n";
+
   // ── Build node-ID sets for P-EDCA vs Legacy STAs ──
   std::set<uint32_t> pedcaNodeIds, legacyNodeIds;
   for (uint32_t i = 0; i < nSta; ++i)
@@ -584,8 +633,10 @@ int main(int argc, char* argv[])
       if (rec.m_dropReason.has_value()) {
         failByReason[{ac, rec.m_dropReason.value()}]++;
       }
-      if (pedcaNodeIds.count(rec.m_nodeId)) pedcaStaFailCount++;
-      else if (legacyNodeIds.count(rec.m_nodeId)) legacyStaFailCount++;
+      if (ac == voAc) {
+        if (pedcaNodeIds.count(rec.m_nodeId)) pedcaStaFailCount++;
+        else if (legacyNodeIds.count(rec.m_nodeId)) legacyStaFailCount++;
+      }
     }
   }
 
@@ -616,26 +667,27 @@ int main(int argc, char* argv[])
       helperAccessDelay[ac] += accessUs;
       helperMacDelay[ac] += queueUs + accessUs;
       helperCount[ac]++;
-      if (ac == voAc) {
-        voiceMacDelayUs.push_back(queueUs + accessUs);
-      }
-
-      // Partition by STA type
       double macUs = queueUs + accessUs;
-      if (pedcaNodeIds.count(rec.m_nodeId)) {
-        pedcaStaSuccCount++;
-        pedcaStaQueueDelay += queueUs;
-        pedcaStaAccessDelay += accessUs;
-        pedcaStaMacDelay += macUs;
-        pedcaStaMacDelayVec.push_back(macUs);
-        if (rec.m_retransmissions == 0) pedcaStaZeroRetx++;
-      } else if (legacyNodeIds.count(rec.m_nodeId)) {
-        legacyStaSuccCount++;
-        legacyStaQueueDelay += queueUs;
-        legacyStaAccessDelay += accessUs;
-        legacyStaMacDelay += macUs;
-        legacyStaMacDelayVec.push_back(macUs);
-        if (rec.m_retransmissions == 0) legacyStaZeroRetx++;
+      if (ac == voAc) {
+        voiceMacDelayUs.push_back(macUs);
+
+        // Partition only VO records so the two STA-type histograms form the
+        // same population as the all-VO histogram.
+        if (pedcaNodeIds.count(rec.m_nodeId)) {
+          pedcaStaSuccCount++;
+          pedcaStaQueueDelay += queueUs;
+          pedcaStaAccessDelay += accessUs;
+          pedcaStaMacDelay += macUs;
+          pedcaStaMacDelayVec.push_back(macUs);
+          if (rec.m_retransmissions == 0) pedcaStaZeroRetx++;
+        } else if (legacyNodeIds.count(rec.m_nodeId)) {
+          legacyStaSuccCount++;
+          legacyStaQueueDelay += queueUs;
+          legacyStaAccessDelay += accessUs;
+          legacyStaMacDelay += macUs;
+          legacyStaMacDelayVec.push_back(macUs);
+          if (rec.m_retransmissions == 0) legacyStaZeroRetx++;
+        }
       }
     }
   }
