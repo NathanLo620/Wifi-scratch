@@ -2,252 +2,254 @@
   P-EDCA Count Sweep Statistics (Fixed nSta=30)
   dataRate = 0.5Mbps    simTime = 10.0s    runs = 10 (averaged)
   P-EDCA counts: [5, 15, 30]
-  Generated: 2026-07-12 16:32:45
+  Generated: 2026-07-19 01:24:35
 ====================================================================================================
 
 P-EDCA STAs = 5/30  (ratio=0.17)
 === WifiTxStatsHelper (MAC-layer) [Averaged over 10 runs] ===
 P-EDCA Ratio: 0.166667
-Channel Idle Time (AP): 29.26 %
-P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 13.5442 %
-Avg P-EDCA Attempt Success Rate: 86.1823 %
-Global P-EDCA Tx Success: 359.5
-Global EDCA Tx Success: 2381.5
-Global P-EDCA Attempt (DS-CTS Sent): 444.7
-Total Successes:       16540.5
-Total Failures:        30.0
+Channel Idle Time (AP): 35.40 %
+P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 31.445 %
+Avg P-EDCA Attempt Success Rate: 74.7882 %
+Global P-EDCA Tx Success: 711.0
+Global EDCA Tx Success: 1725.3
+Global P-EDCA Attempt (DS-CTS Sent): 1000.5
+Total Successes:       14342.0
+Total Failures:        275.7
 
 --- Per-AC Success Statistics ---
 AC_BE:
-  Successes:         17.2
-  Throughput:        0.0152889 Mbps
-  Packet Loss:       3.2294 %
+  Successes:         17.6
+  Throughput:        0.0156444 Mbps
+  Packet Loss:       1.5776 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   -529329.000 us (Enqueue->TxStart)
-  Avg Access Delay:  582234.300 us (TxStart->Ack)
-  Avg MAC Delay:     52905.240 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   -563784.500 us (Enqueue->TxStart)
+  Avg Access Delay:  612494.500 us (TxStart->Ack)
+  Avg MAC Delay:     48710.170 us (Total: Enqueue->Ack)
 
 AC_VO:
-  Successes:         16523.3
-  Throughput:        14.6874 Mbps
-  Packet Loss:       0.1776 %
+  Successes:         14324.4
+  Throughput:        12.7328 Mbps
+  Packet Loss:       1.8820 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   1385.048 us (Enqueue->TxStart)
-  Avg Access Delay:  252.835 us (TxStart->Ack)
-  Avg MAC Delay:     1637.883 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   4220.425 us (Enqueue->TxStart)
+  Avg Access Delay:  283.136 us (TxStart->Ack)
+  Avg MAC Delay:     4503.562 us (Total: Enqueue->Ack)
 
 --- Per-AC Failure Statistics ---
-AC_BE Failures: 0.6
-AC_VO Failures: 29.4
+AC_BE Failures: 0.3
+AC_VO Failures: 275.4
 
 --- Failure Reasons by AC ---
-  AC_BE EXPIRED_LIFETIME: 0.5
-  AC_BE RETRY_LIMIT: 0.1
-  AC_VO RETRY_LIMIT: 29.4
-  Avg per P-EDCA STA: 88.9
-  Failures: 29.6
-  LEGACY_STA_AVG_ACCESS_DELAY: 252.2
-  LEGACY_STA_AVG_MAC_DELAY: 1662.2
-  LEGACY_STA_AVG_QUEUE_DELAY: 1410.0
-  LEGACY_STA_FAIL_COUNT: 29.6
-  LEGACY_STA_SUCC_COUNT: 13852.7
-  LEGACY_STA_ZERO_RETX: 13852.7
-  PEDCA_STA_AVG_ACCESS_DELAY: 256.1
-  PEDCA_STA_AVG_MAC_DELAY: 1512.7
-  PEDCA_STA_AVG_QUEUE_DELAY: 1256.5
-  PEDCA_STA_FAIL_COUNT: 0.3
-  PEDCA_STA_SUCC_COUNT: 2671.9
-  PEDCA_STA_ZERO_RETX: 2671.9
-  Successes: 13852.7
+  AC_BE EXPIRED_LIFETIME: 0.1
+  AC_BE RETRY_LIMIT: 0.2
+  AC_VO EXPIRED_LIFETIME: 45.2
+  AC_VO RETRY_LIMIT: 230.2
+  Avg per P-EDCA STA: 200.1
+  Failures: 221.7
+  LEGACY_STA_AVG_ACCESS_DELAY: 284.7
+  LEGACY_STA_AVG_MAC_DELAY: 4627.8
+  LEGACY_STA_AVG_QUEUE_DELAY: 4343.1
+  LEGACY_STA_FAIL_COUNT: 221.7
+  LEGACY_STA_SUCC_COUNT: 11939.7
+  LEGACY_STA_ZERO_RETX: 11939.7
+  PEDCA_STA_AVG_ACCESS_DELAY: 275.7
+  PEDCA_STA_AVG_MAC_DELAY: 3895.5
+  PEDCA_STA_AVG_QUEUE_DELAY: 3619.9
+  PEDCA_STA_FAIL_COUNT: 53.7
+  PEDCA_STA_SUCC_COUNT: 2384.7
+  PEDCA_STA_ZERO_RETX: 2384.7
+  Successes: 11939.7
 
 --- P-EDCA Detailed Trace ---
-DS-CTS Sent: 444.7
-Stage 2 Entered: 444.7
-Stage 2 TX Started: 369.6
-P-EDCA TX Success: 359.5
-EDCA VO TX Success: 2381.5
+DS-CTS Sent: 1000.5
+Stage 2 Entered: 1000.5
+Stage 2 TX Started: 748.4
+P-EDCA TX Success: 711.0
+EDCA VO TX Success: 1725.3
 P-EDCA Fail RTS No CTS: 0.0
-P-EDCA Fail RTS Collision: 10.1
-P-EDCA Fail Timing Expired: 75.1
+P-EDCA Fail RTS Collision: 37.4
+P-EDCA Fail Timing Expired: 252.1
 P-EDCA Fail Deferral: 0.0
-Total VO TX (P-EDCA+EDCA): 2741.0
-P-EDCA Success Ratio: 13.1157 %
-EDCA Success Ratio: 86.8843 %
+Total VO TX (P-EDCA+EDCA): 2436.3
+P-EDCA Success Ratio: 29.1836 %
+EDCA Success Ratio: 70.8164 %
 
 --- Extended P-EDCA vs Legacy Statistics ---
-PEDCA_STA_SUCC_COUNT: 2671.9
-PEDCA_STA_FAIL_COUNT: 0.3
-PEDCA_STA_ZERO_RETX: 2671.9
-LEGACY_STA_SUCC_COUNT: 13852.7
-LEGACY_STA_FAIL_COUNT: 29.6
-LEGACY_STA_ZERO_RETX: 13852.7
-PEDCA_STA_AVG_MAC_DELAY: 1512.672
-PEDCA_STA_AVG_QUEUE_DELAY: 1256.535
-PEDCA_STA_AVG_ACCESS_DELAY: 256.137
-LEGACY_STA_AVG_MAC_DELAY: 1662.181
-LEGACY_STA_AVG_QUEUE_DELAY: 1409.985
-LEGACY_STA_AVG_ACCESS_DELAY: 252.195
+PEDCA_STA_SUCC_COUNT: 2384.7
+PEDCA_STA_FAIL_COUNT: 53.7
+PEDCA_STA_ZERO_RETX: 2384.7
+LEGACY_STA_SUCC_COUNT: 11939.7
+LEGACY_STA_FAIL_COUNT: 221.7
+LEGACY_STA_ZERO_RETX: 11939.7
+PEDCA_STA_AVG_MAC_DELAY: 3895.538
+PEDCA_STA_AVG_QUEUE_DELAY: 3619.874
+PEDCA_STA_AVG_ACCESS_DELAY: 275.663
+LEGACY_STA_AVG_MAC_DELAY: 4627.825
+LEGACY_STA_AVG_QUEUE_DELAY: 4343.091
+LEGACY_STA_AVG_ACCESS_DELAY: 284.733
 
 P-EDCA STAs = 15/30  (ratio=0.50)
 === WifiTxStatsHelper (MAC-layer) [Averaged over 10 runs] ===
 P-EDCA Ratio: 0.5
-Channel Idle Time (AP): 30.31 %
-P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 13.7994 %
-Avg P-EDCA Attempt Success Rate: 79.9483 %
-Global P-EDCA Tx Success: 1039.1
-Global EDCA Tx Success: 6914.7
-Global P-EDCA Attempt (DS-CTS Sent): 1342.7
-Total Successes:       16147.7
-Total Failures:        61.2
+Channel Idle Time (AP): 36.24 %
+P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 28.6455 %
+Avg P-EDCA Attempt Success Rate: 66.7309 %
+Global P-EDCA Tx Success: 1800.9
+Global EDCA Tx Success: 4965.2
+Global P-EDCA Attempt (DS-CTS Sent): 2753.0
+Total Successes:       14023.0
+Total Failures:        366.8
 
 --- Per-AC Success Statistics ---
 AC_BE:
-  Successes:         21.6
-  Throughput:        0.0192 Mbps
-  Packet Loss:       2.6507 %
+  Successes:         22.9
+  Throughput:        0.0203556 Mbps
+  Packet Loss:       7.1452 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   -593752.000 us (Enqueue->TxStart)
-  Avg Access Delay:  632155.100 us (TxStart->Ack)
-  Avg MAC Delay:     38402.990 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   -704447.500 us (Enqueue->TxStart)
+  Avg Access Delay:  730015.800 us (TxStart->Ack)
+  Avg MAC Delay:     25568.190 us (Total: Enqueue->Ack)
 
 AC_VO:
-  Successes:         16126.1
-  Throughput:        14.3343 Mbps
-  Packet Loss:       0.3763 %
+  Successes:         14000.1
+  Throughput:        12.4445 Mbps
+  Packet Loss:       2.5272 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   1366.327 us (Enqueue->TxStart)
-  Avg Access Delay:  254.492 us (TxStart->Ack)
-  Avg MAC Delay:     1620.819 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   3815.163 us (Enqueue->TxStart)
+  Avg Access Delay:  279.430 us (TxStart->Ack)
+  Avg MAC Delay:     4094.592 us (Total: Enqueue->Ack)
 
 --- Per-AC Failure Statistics ---
-AC_BE Failures: 0.6
-AC_VO Failures: 60.6
+AC_BE Failures: 1.7
+AC_VO Failures: 365.1
 
 --- Failure Reasons by AC ---
-  AC_BE EXPIRED_LIFETIME: 0.4
-  AC_BE RETRY_LIMIT: 0.2
-  AC_VO EXPIRED_LIFETIME: 37.5
-  AC_VO RETRY_LIMIT: 23.1
-  Avg per P-EDCA STA: 89.5
-  Failures: 22.5
-  LEGACY_STA_AVG_ACCESS_DELAY: 252.2
-  LEGACY_STA_AVG_MAC_DELAY: 1743.5
-  LEGACY_STA_AVG_QUEUE_DELAY: 1491.3
-  LEGACY_STA_FAIL_COUNT: 22.5
-  LEGACY_STA_SUCC_COUNT: 8323.6
-  LEGACY_STA_ZERO_RETX: 8323.6
-  PEDCA_STA_AVG_ACCESS_DELAY: 256.9
-  PEDCA_STA_AVG_MAC_DELAY: 1490.0
-  PEDCA_STA_AVG_QUEUE_DELAY: 1233.1
-  PEDCA_STA_FAIL_COUNT: 38.5
-  PEDCA_STA_SUCC_COUNT: 7804.3
-  PEDCA_STA_ZERO_RETX: 7804.3
-  Successes: 8323.6
+  AC_BE EXPIRED_LIFETIME: 1.2
+  AC_BE RETRY_LIMIT: 0.5
+  AC_VO EXPIRED_LIFETIME: 227.5
+  AC_VO RETRY_LIMIT: 137.6
+  Avg per P-EDCA STA: 183.5
+  Failures: 107.3
+  LEGACY_STA_AVG_ACCESS_DELAY: 280.9
+  LEGACY_STA_AVG_MAC_DELAY: 4458.5
+  LEGACY_STA_AVG_QUEUE_DELAY: 4177.7
+  LEGACY_STA_FAIL_COUNT: 107.3
+  LEGACY_STA_SUCC_COUNT: 7330.3
+  LEGACY_STA_ZERO_RETX: 7330.3
+  PEDCA_STA_AVG_ACCESS_DELAY: 278.0
+  PEDCA_STA_AVG_MAC_DELAY: 3700.8
+  PEDCA_STA_AVG_QUEUE_DELAY: 3422.8
+  PEDCA_STA_FAIL_COUNT: 257.8
+  PEDCA_STA_SUCC_COUNT: 6669.8
+  PEDCA_STA_ZERO_RETX: 6669.8
+  Successes: 7330.3
 
 --- P-EDCA Detailed Trace ---
-DS-CTS Sent: 1342.7
-Stage 2 Entered: 1342.7
-Stage 2 TX Started: 1081.2
-P-EDCA TX Success: 1039.1
-EDCA VO TX Success: 6914.7
+DS-CTS Sent: 2753.0
+Stage 2 Entered: 2753.0
+Stage 2 TX Started: 1924.7
+P-EDCA TX Success: 1800.9
+EDCA VO TX Success: 4965.2
 P-EDCA Fail RTS No CTS: 0.0
-P-EDCA Fail RTS Collision: 42.1
-P-EDCA Fail Timing Expired: 261.5
+P-EDCA Fail RTS Collision: 123.8
+P-EDCA Fail Timing Expired: 828.3
 P-EDCA Fail Deferral: 0.0
-Total VO TX (P-EDCA+EDCA): 7953.8
-P-EDCA Success Ratio: 13.0642 %
-EDCA Success Ratio: 86.9358 %
+Total VO TX (P-EDCA+EDCA): 6766.1
+P-EDCA Success Ratio: 26.6165 %
+EDCA Success Ratio: 73.3835 %
 
 --- Extended P-EDCA vs Legacy Statistics ---
-PEDCA_STA_SUCC_COUNT: 7804.3
-PEDCA_STA_FAIL_COUNT: 38.5
-PEDCA_STA_ZERO_RETX: 7804.3
-LEGACY_STA_SUCC_COUNT: 8323.6
-LEGACY_STA_FAIL_COUNT: 22.5
-LEGACY_STA_ZERO_RETX: 8323.6
-PEDCA_STA_AVG_MAC_DELAY: 1490.028
-PEDCA_STA_AVG_QUEUE_DELAY: 1233.110
-PEDCA_STA_AVG_ACCESS_DELAY: 256.918
-LEGACY_STA_AVG_MAC_DELAY: 1743.485
-LEGACY_STA_AVG_QUEUE_DELAY: 1491.268
-LEGACY_STA_AVG_ACCESS_DELAY: 252.217
+PEDCA_STA_SUCC_COUNT: 6669.8
+PEDCA_STA_FAIL_COUNT: 257.8
+PEDCA_STA_ZERO_RETX: 6669.8
+LEGACY_STA_SUCC_COUNT: 7330.3
+LEGACY_STA_FAIL_COUNT: 107.3
+LEGACY_STA_ZERO_RETX: 7330.3
+PEDCA_STA_AVG_MAC_DELAY: 3700.777
+PEDCA_STA_AVG_QUEUE_DELAY: 3422.758
+PEDCA_STA_AVG_ACCESS_DELAY: 278.017
+LEGACY_STA_AVG_MAC_DELAY: 4458.539
+LEGACY_STA_AVG_QUEUE_DELAY: 4177.659
+LEGACY_STA_AVG_ACCESS_DELAY: 280.877
 
 P-EDCA STAs = 30/30  (ratio=1.00)
 === WifiTxStatsHelper (MAC-layer) [Averaged over 10 runs] ===
 P-EDCA Ratio: 1.0
-Channel Idle Time (AP): 34.13 %
-P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 11.4642 %
-Avg P-EDCA Attempt Success Rate: 69.528 %
-Global P-EDCA Tx Success: 1614.8
-Global EDCA Tx Success: 13713.5
-Global P-EDCA Attempt (DS-CTS Sent): 2283.4
-Total Successes:       15082.3
-Total Failures:        101.6
+Channel Idle Time (AP): 37.88 %
+P-EDCA Share (Avg Per-STA P-EDCA Tx/Total Tx): 24.7751 %
+Avg P-EDCA Attempt Success Rate: 58.5858 %
+Global P-EDCA Tx Success: 3060.2
+Global EDCA Tx Success: 10362.6
+Global P-EDCA Attempt (DS-CTS Sent): 5405.1
+Total Successes:       13310.9
+Total Failures:        225.6
 
 --- Per-AC Success Statistics ---
 AC_BE:
-  Successes:         37.8
-  Throughput:        0.0336 Mbps
-  Packet Loss:       3.4699 %
+  Successes:         37.5
+  Throughput:        0.0333333 Mbps
+  Packet Loss:       3.1531 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   -744068.700 us (Enqueue->TxStart)
-  Avg Access Delay:  766580.500 us (TxStart->Ack)
-  Avg MAC Delay:     22511.807 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   -734184.600 us (Enqueue->TxStart)
+  Avg Access Delay:  752478.300 us (TxStart->Ack)
+  Avg MAC Delay:     18293.840 us (Total: Enqueue->Ack)
 
 AC_VO:
-  Successes:         15044.5
-  Throughput:        13.3729 Mbps
-  Packet Loss:       0.6675 %
+  Successes:         13273.4
+  Throughput:        11.7986 Mbps
+  Packet Loss:       1.6415 %
   Avg Retx/MPDU:     0
-  Avg Queue Delay:   1123.144 us (Enqueue->TxStart)
-  Avg Access Delay:  257.381 us (TxStart->Ack)
-  Avg MAC Delay:     1380.526 us (Total: Enqueue->Ack)
+  Avg Queue Delay:   3227.816 us (Enqueue->TxStart)
+  Avg Access Delay:  282.543 us (TxStart->Ack)
+  Avg MAC Delay:     3510.359 us (Total: Enqueue->Ack)
 
 --- Per-AC Failure Statistics ---
-AC_BE Failures: 1.4
-AC_VO Failures: 100.2
+AC_BE Failures: 1.2
+AC_VO Failures: 224.4
 
 --- Failure Reasons by AC ---
-  AC_BE EXPIRED_LIFETIME: 1.4
-  AC_VO EXPIRED_LIFETIME: 99.3
-  AC_VO RETRY_LIMIT: 0.9
-  Avg per P-EDCA STA: 71.5
+  AC_BE EXPIRED_LIFETIME: 1.1
+  AC_BE RETRY_LIMIT: 0.1
+  AC_VO EXPIRED_LIFETIME: 161.7
+  AC_VO RETRY_LIMIT: 62.7
+  Avg per P-EDCA STA: 180.2
   Failures: 0.0
   LEGACY_STA_FAIL_COUNT: 0.0
   LEGACY_STA_SUCC_COUNT: 0.0
   LEGACY_STA_ZERO_RETX: 0.0
-  PEDCA_STA_AVG_ACCESS_DELAY: 231.9
-  PEDCA_STA_AVG_MAC_DELAY: 1269.4
-  PEDCA_STA_AVG_QUEUE_DELAY: 1037.5
-  PEDCA_STA_FAIL_COUNT: 101.6
-  PEDCA_STA_SUCC_COUNT: 13483.0
-  PEDCA_STA_ZERO_RETX: 13483.0
+  PEDCA_STA_AVG_ACCESS_DELAY: 282.5
+  PEDCA_STA_AVG_MAC_DELAY: 3510.4
+  PEDCA_STA_AVG_QUEUE_DELAY: 3227.8
+  PEDCA_STA_FAIL_COUNT: 224.4
+  PEDCA_STA_SUCC_COUNT: 13273.4
+  PEDCA_STA_ZERO_RETX: 13273.4
   Successes: 0.0
 
 --- P-EDCA Detailed Trace ---
-DS-CTS Sent: 2283.4
-Stage 2 Entered: 2283.4
-Stage 2 TX Started: 1716.6
-P-EDCA TX Success: 1614.8
-EDCA VO TX Success: 13713.5
+DS-CTS Sent: 5405.1
+Stage 2 Entered: 5405.1
+Stage 2 TX Started: 3383.3
+P-EDCA TX Success: 3060.2
+EDCA VO TX Success: 10362.6
 P-EDCA Fail RTS No CTS: 0.0
-P-EDCA Fail RTS Collision: 101.8
-P-EDCA Fail Timing Expired: 566.8
+P-EDCA Fail RTS Collision: 323.1
+P-EDCA Fail Timing Expired: 2021.8
 P-EDCA Fail Deferral: 0.0
-Total VO TX (P-EDCA+EDCA): 15328.3
-P-EDCA Success Ratio: 10.5348 %
-EDCA Success Ratio: 89.4652 %
+Total VO TX (P-EDCA+EDCA): 13422.8
+P-EDCA Success Ratio: 22.7985 %
+EDCA Success Ratio: 77.2015 %
 
 --- Extended P-EDCA vs Legacy Statistics ---
-PEDCA_STA_SUCC_COUNT: 15048.6
-PEDCA_STA_FAIL_COUNT: 101.6
-PEDCA_STA_ZERO_RETX: 15048.6
+PEDCA_STA_SUCC_COUNT: 13273.4
+PEDCA_STA_FAIL_COUNT: 224.4
+PEDCA_STA_ZERO_RETX: 13273.4
 LEGACY_STA_SUCC_COUNT: 0.0
 LEGACY_STA_FAIL_COUNT: 0.0
 LEGACY_STA_ZERO_RETX: 0.0
-PEDCA_STA_AVG_MAC_DELAY: 1381.466
-PEDCA_STA_AVG_QUEUE_DELAY: 1124.123
-PEDCA_STA_AVG_ACCESS_DELAY: 257.343
+PEDCA_STA_AVG_MAC_DELAY: 3510.359
+PEDCA_STA_AVG_QUEUE_DELAY: 3227.816
+PEDCA_STA_AVG_ACCESS_DELAY: 282.543
 LEGACY_STA_AVG_MAC_DELAY: 0.000
 LEGACY_STA_AVG_QUEUE_DELAY: 0.000
 LEGACY_STA_AVG_ACCESS_DELAY: 0.000
