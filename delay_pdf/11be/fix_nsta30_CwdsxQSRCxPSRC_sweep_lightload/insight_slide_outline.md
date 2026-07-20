@@ -1,42 +1,48 @@
-# Tuning P-EDCA Parameters to Minimize P99 VO Delay
-### nSta = 30, 1 Mbps — sweep over CWds × QSRC × PSRC × nPedca
+# P-EDCA under Light Load: Tuning CWds × QSRC × PSRC (802.11be, re-run v6.3.2, 2026-07-18)
+### nSta = 30, offered load 0.1 / 0.5 Mbps per STA (vs 1 Mbps saturated reference) — P-EDCA STA P99
+> Data vintage: re-simulated on v6.3.2 code (EHT NAV / frame-exchange fixes), PHY rate-matched to
+> 11n (EhtMcs5 @ GI 1.6 µs = 65.0 Mbps). Deck: `11be/pedca_lightload_insights{,_en}.pdf`.
 
 ---
 
-**What the knobs do**
-- **CWds** — Stage-1 contention window after entering P-EDCA (0 = ASAP, 1 = random[0,1]): collision control
-- **QSRC** — short-retry threshold that *triggers* P-EDCA: **how early** a STA enters the priority path
-- **PSRC** — max *consecutive* priority attempts before kickback to EDCA: **how long** it stays prioritized
-- Channel airtime is **zero-sum**: P-EDCA gains are paid for by Legacy STAs
+**The three load regimes (EDCA-only VO P99 sets the scene)**
+- **0.1 Mbps — uncongested**: EDCA-only P99 = 0.92 ms (sub-ms). Nothing for P-EDCA to fix.
+- **0.5 Mbps — congested, not saturated**: EDCA-only P99 = 21.96 ms. Real queueing, drainable.
+- **1.0 Mbps — saturated**: EDCA-only P99 = 46.2 ms. Collision-feedback regime.
 
 ---
 
-**Key Insight 1 — PSRC is the dominant lever (and a trade-off)**
-- Larger PSRC → P-EDCA STA P99 drops sharply (qsrc=0, nPedca=5: 15.9k → 8.0k → 5.6k µs)
-- Measured P-EDCA airtime share rises 62% → 74% → 87% as PSRC 1 → 2 → 3
-- Same airtime is taken from Legacy → Legacy P99 *rises* (19.4k → 20.5k → 20.8k µs)
-- **All-STA view ≈ flat**: P-EDCA gain cancels Legacy loss (except nPedca=30, no Legacy)
+**Key Insight 1 — P-EDCA's value tracks congestion, and now RISES with penetration**
+- 0.1 Mbps: best +5–7% only (0.87 vs 0.92 ms) — effectively a no-op
+- 0.5 Mbps: +56% (n=5) → +75% (n=15) → **+87%** (n=30): 22.0 → 2.9 ms
+- 1.0 Mbps: +50% / +44% / **+71%** (n=5/15/30): 46.2 → 13.2 ms
+- (Pre-v6.3 data showed the gain *collapsing* at high penetration — that reversed.)
 
-**Key Insight 2 — "smaller QSRC" only pays off when PSRC ≥ 2**
-- Early trigger helps only if the priority path can actually drain the packet
-- PSRC=1: one shot then kickback → QSRC barely matters (even slightly reversed)
-- PSRC≥2: small QSRC (0–2) best; QSRC 3–5 wastes slow EDCA retries first → tail explodes
+**Key Insight 2 — one aggressive recipe wins at every load with real queueing**
+- QSRC strictly monotonic at 0.5 Mbps (q0 5.8 → q5 25.8 ms) AND at saturation (q0 22.2 → q5 48.8 ms)
+- PSRC larger-is-better at both (0.5 Mbps: s3 12.7 vs s1 18.7 ms; sat: s3 36.4 vs s1 41.4 ms)
+- CWds don't-care. Recipe: **QSRC = 0, PSRC = 3, CWds = 0/1** — no load-dependent backoff needed anymore
 
-**Key Insight 3 — CWds and the q1 wiggle are second-order**
-- CWds=1 mildly better (de-synchronizes simultaneous P-EDCA STAs); |corr| < 0.2
-- Legacy/All QSRC ripples are within Monte-Carlo noise — not a real trend
+**Key Insight 3 — at 0.1 Mbps, don't trigger P-EDCA at all**
+- Shallow reverse-U in QSRC: q0 is mildly the WORST (1.4 ms) vs q2 (1.0 ms)
+- Winning combo drifts across nPedca (c0q5s2 / c1q3s1 / c0q2s3) — params don't matter when uncongested
 
-**Key Insight 4 — nPedca modulates everything**
-- High nPedca → priority channel self-congests (attempt success 62% → 43%) → benefits saturate
+**Key Insight 4 — the old saturation tail blow-up is GONE**
+- Worst combo over the 36: 0.1 Mbps 1.4 ms; 0.5 Mbps 28 ms; 1.0 Mbps 53 ms ≈ the EDCA-only baseline
+- Worst case now means "no benefit", never "blow-up"
+- The pre-v6.3 pathology (QSRC 0/1 + PSRC 3 at saturation, n=5 → P99 up to 294 ms) no longer
+  reproduces after the v6.3.1/v6.3.2 NAV & frame-exchange fixes — it was a bug artifact, not a
+  property of aggressive parameters
 
 ---
 
 **Recommendations (minimize P99)**
-| Goal | CWds | QSRC | PSRC |
-|------|------|------|------|
-| P-EDCA STAs | 1 | 0–1 | 3 (larger) |
-| Legacy STAs | 1 | 0 | 1 (smaller) |
-| All STAs (balanced) | 1 | 0 | ~1 (gains cancel) |
+| Load regime | CWds | QSRC | PSRC |
+|-------------|------|------|------|
+| 0.1 Mbps (uncongested) | any | large (don't trigger) | any |
+| 0.5 Mbps (congested) | 0/1 | 0 | 3 |
+| 1.0 Mbps (saturated) | 0/1 | 0 | 3 |
 
-**Bottom line:** PSRC sets *how much* airtime P-EDCA seizes from Legacy; QSRC sets *how early*,
-but only cashes in when PSRC ≥ 2; CWds is fine-tuning — all gated by P-EDCA-channel congestion (nPedca).
+**Bottom line:** P-EDCA is a congestion tool — worthless below the queueing knee, and worth
++87% / +71% P99 above it. With the v6.3.x fixes the aggressive recipe is safe everywhere,
+so the only decision left is *whether* to trigger (QSRC), not *how carefully*.

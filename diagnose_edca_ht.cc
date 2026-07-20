@@ -40,6 +40,51 @@ static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
 static std::vector<double> g_appDelayUs;
+static bool g_detailedPhyLog = true;
+
+struct EdcaPhyDiagnostics
+{
+    uint64_t ulDataPpdus{0};
+    uint64_t ulDataMpdus{0};
+    uint64_t ulDataMsdus{0};
+    uint64_t ulRetryMpdus{0};
+    uint64_t ulSingleMpdus{0};
+    uint64_t ulAggregationFlagPpdus{0};
+    uint64_t ulRtsPpdus{0};
+    uint64_t ulCfEndPpdus{0};
+    uint64_t apCtsPpdus{0};
+    uint64_t apAckPpdus{0};
+    uint64_t apBlockAckPpdus{0};
+    uint64_t staWaitCtsTimeouts{0};
+    uint64_t staWaitAckTimeouts{0};
+    uint64_t staWaitBlockAckTimeouts{0};
+    double ulDataAirtimeUs{0.0};
+    std::map<std::size_t, uint64_t> ampduDepth;
+    std::map<std::size_t, uint64_t> amsduDepth;
+    std::map<uint32_t, uint64_t> psduSizeBytes;
+    std::map<int64_t, uint64_t> dataPpduDurationUs;
+    std::map<std::string, uint64_t> rtsModeHist;
+    std::map<std::string, uint64_t> ctsModeHist;
+    std::map<int64_t, uint64_t> rtsPpduDurationUs;
+    std::map<int64_t, uint64_t> ctsPpduDurationUs;
+    std::map<int, uint64_t> apPhyDrops;
+    std::map<int, uint64_t> apRtsPhyDrops;
+};
+
+static EdcaPhyDiagnostics g_edcaDiag;
+static std::vector<Ptr<ChannelAccessManager>> g_staCams;
+static std::vector<Ptr<QosTxop>> g_staVoTxops;
+static uint64_t g_rtsStateSamples = 0;
+static uint64_t g_navActiveAtRtsSum = 0;
+static uint64_t g_nonemptyVoAtRtsSum = 0;
+static std::map<uint32_t, uint64_t> g_navActiveAtRtsHist;
+static std::map<uint32_t, uint64_t> g_nonemptyVoAtRtsHist;
+
+static bool
+InMeasurementWindow()
+{
+    return Simulator::Now() >= Seconds(g_warmupTime) && Simulator::Now() < Seconds(g_simTime);
+}
 
 static void
 ServerRx(Ptr<const Packet> packet)
@@ -92,6 +137,10 @@ static void PhyRxBeginCb(std::string label,
                          Ptr<const Packet> packet,
                          RxPowerWattPerChannelBand /*rxPowers*/)
 {
+    if (!g_detailedPhyLog)
+    {
+        return;
+    }
     std::clog << "[PHY-LOCK] " << label
               << " t=" << Simulator::Now().GetMicroSeconds() << "us "
               << FrameInfoFromMpdu(packet) << std::endl;
@@ -101,12 +150,136 @@ static void PhyRxPpduDropCb(std::string label,
                             Ptr<const WifiPpdu> ppdu,
                             WifiPhyRxfailureReason reason)
 {
-    std::stringstream rs;
-    rs << reason;
-    std::clog << "[PHY-DROP] " << label
-              << " t=" << Simulator::Now().GetMicroSeconds() << "us "
-              << FrameInfoFromPpdu(ppdu)
-              << " reason=" << rs.str() << std::endl;
+    if (label == "AP" && InMeasurementWindow())
+    {
+        g_edcaDiag.apPhyDrops[static_cast<int>(reason)]++;
+        auto psdu = ppdu->GetPsdu();
+        if (psdu && psdu->GetNMpdus() > 0 && psdu->GetHeader(0).IsRts())
+        {
+            g_edcaDiag.apRtsPhyDrops[static_cast<int>(reason)]++;
+        }
+    }
+    if (g_detailedPhyLog)
+    {
+        std::stringstream rs;
+        rs << reason;
+        std::clog << "[PHY-DROP] " << label
+                  << " t=" << Simulator::Now().GetMicroSeconds() << "us "
+                  << FrameInfoFromPpdu(ppdu)
+                  << " reason=" << rs.str() << std::endl;
+    }
+}
+
+static void
+PhyTxPsduBeginCb(bool isAp,
+                 WifiConstPsduMap psduMap,
+                 WifiTxVector txVector,
+                 double /*txPowerW*/)
+{
+    if (!InMeasurementWindow())
+    {
+        return;
+    }
+
+    for (const auto& [staId, psdu] : psduMap)
+    {
+        (void)staId;
+        if (!psdu || psdu->GetNMpdus() == 0)
+        {
+            continue;
+        }
+        const auto& hdr = psdu->GetHeader(0);
+        if (!isAp && hdr.IsRts())
+        {
+            g_edcaDiag.ulRtsPpdus++;
+            g_edcaDiag.rtsModeHist[txVector.GetMode().GetUniqueName()]++;
+            const auto txDuration =
+                WifiPhy::CalculateTxDuration(psduMap, txVector, WIFI_PHY_BAND_5GHZ);
+            g_edcaDiag.rtsPpduDurationUs[txDuration.GetMicroSeconds()]++;
+            uint32_t navActive = 0;
+            uint32_t nonemptyVo = 0;
+            const auto now = Simulator::Now();
+            for (const auto& cam : g_staCams)
+            {
+                navActive += cam->GetNavEnd() > now;
+            }
+            for (const auto& txop : g_staVoTxops)
+            {
+                nonemptyVo += !txop->GetWifiMacQueue()->IsEmpty();
+            }
+            g_rtsStateSamples++;
+            g_navActiveAtRtsSum += navActive;
+            g_nonemptyVoAtRtsSum += nonemptyVo;
+            g_navActiveAtRtsHist[navActive]++;
+            g_nonemptyVoAtRtsHist[nonemptyVo]++;
+        }
+        if (!isAp && hdr.IsCfEnd())
+        {
+            g_edcaDiag.ulCfEndPpdus++;
+        }
+        if (isAp)
+        {
+            g_edcaDiag.apCtsPpdus += hdr.IsCts();
+            if (hdr.IsCts())
+            {
+                g_edcaDiag.ctsModeHist[txVector.GetMode().GetUniqueName()]++;
+                const auto txDuration =
+                    WifiPhy::CalculateTxDuration(psduMap, txVector, WIFI_PHY_BAND_5GHZ);
+                g_edcaDiag.ctsPpduDurationUs[txDuration.GetMicroSeconds()]++;
+            }
+            g_edcaDiag.apAckPpdus += hdr.IsAck();
+            g_edcaDiag.apBlockAckPpdus += hdr.IsBlockAck();
+            continue;
+        }
+        if (!hdr.IsQosData() || (hdr.GetQosTid() != 6 && hdr.GetQosTid() != 7))
+        {
+            continue;
+        }
+
+        g_edcaDiag.ulDataPpdus++;
+        g_edcaDiag.ulSingleMpdus += psdu->IsSingle();
+        g_edcaDiag.ulAggregationFlagPpdus += txVector.IsAggregation();
+        g_edcaDiag.ulDataMpdus += psdu->GetNMpdus();
+        g_edcaDiag.ampduDepth[psdu->GetNMpdus()]++;
+        g_edcaDiag.psduSizeBytes[psdu->GetSize()]++;
+        const auto txDuration =
+            WifiPhy::CalculateTxDuration(psduMap, txVector, WIFI_PHY_BAND_5GHZ);
+        g_edcaDiag.ulDataAirtimeUs += txDuration.GetNanoSeconds() / 1000.0;
+        g_edcaDiag.dataPpduDurationUs[txDuration.GetMicroSeconds()]++;
+        for (const auto& mpdu : *PeekPointer(psdu))
+        {
+            g_edcaDiag.ulRetryMpdus += mpdu->GetHeader().IsRetry();
+            const auto nMsdus = std::max<std::size_t>(1, std::distance(mpdu->begin(), mpdu->end()));
+            g_edcaDiag.ulDataMsdus += nMsdus;
+            g_edcaDiag.amsduDepth[nMsdus]++;
+        }
+    }
+}
+
+static void
+MpduResponseTimeoutCb(uint8_t reason,
+                      Ptr<const WifiMpdu> /*mpdu*/,
+                      const WifiTxVector& /*txVector*/)
+{
+    if (!InMeasurementWindow())
+    {
+        return;
+    }
+    g_edcaDiag.staWaitCtsTimeouts += (reason == WifiTxTimer::WAIT_CTS);
+    g_edcaDiag.staWaitAckTimeouts += (reason == WifiTxTimer::WAIT_NORMAL_ACK);
+}
+
+static void
+PsduResponseTimeoutCb(uint8_t reason,
+                      Ptr<const WifiPsdu> /*psdu*/,
+                      const WifiTxVector& /*txVector*/)
+{
+    if (!InMeasurementWindow())
+    {
+        return;
+    }
+    g_edcaDiag.staWaitCtsTimeouts += (reason == WifiTxTimer::WAIT_CTS);
+    g_edcaDiag.staWaitBlockAckTimeouts += (reason == WifiTxTimer::WAIT_BLOCK_ACK);
 }
 
 static const char* PhyStateName(ns3::WifiPhyState s)
@@ -145,10 +318,13 @@ void ApPhyStateTrace(std::string context, Time start, Time duration, ns3::WifiPh
     // whether the AP was actually able to receive (IDLE/CCA_BUSY/RX/TX) at that instant.
     double startUs = start.GetMicroSeconds();
     double endUs = startUs + duration.GetMicroSeconds();
-    std::clog << "[AP-PHY] state=" << PhyStateName(state)
-              << " start=" << startUs << "us"
-              << " end=" << endUs << "us"
-              << " duration=" << duration.GetMicroSeconds() << "us" << std::endl;
+    if (g_detailedPhyLog)
+    {
+        std::clog << "[AP-PHY] state=" << PhyStateName(state)
+                  << " start=" << startUs << "us"
+                  << " end=" << endUs << "us"
+                  << " duration=" << duration.GetMicroSeconds() << "us" << std::endl;
+    }
 }
 
 // Helper to get AC name
@@ -187,7 +363,10 @@ int main(int argc, char* argv[])
   bool enableRts = true;
   bool enableAggregation = true;
   bool verbose = false;
+  bool detailedPhyLog = true;
   double warmupTime = 1.0;
+  double trafficStartTime = 0.5;
+  double trafficStartJitter = 0.5;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
   std::string pedcaStaDelayOutput = "";  // CSV for P-EDCA STA delay histogram
@@ -203,6 +382,10 @@ int main(int argc, char* argv[])
   cmd.AddValue("simTime","Simulation time (seconds)", simTime);
   cmd.AddValue("dataRate","Data rate (e.g., 0.5Mbps)", dataRate);
   cmd.AddValue("verbose","Enable logging", verbose);
+  cmd.AddValue("detailedPhyLog", "Write per-frame PHY lock/drop/state diagnostics", detailedPhyLog);
+  cmd.AddValue("warmupTime", "Start of the statistics window in seconds", warmupTime);
+  cmd.AddValue("trafficStartTime", "Earliest UDP client start time in seconds", trafficStartTime);
+  cmd.AddValue("trafficStartJitter", "Uniform UDP client start-time jitter in seconds", trafficStartJitter);
   cmd.AddValue("enableRts","Enable RTS/CTS for every data transmission", enableRts);
   cmd.AddValue("enableAggregation","Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
   cmd.AddValue("voicePdfBinUs","VO delay PDF bin width (microseconds)", voicePdfBinUs);
@@ -238,6 +421,7 @@ int main(int argc, char* argv[])
   
   g_warmupTime = warmupTime;
   g_simTime = simTime;
+  g_detailedPhyLog = detailedPhyLog;
   
 
   
@@ -265,6 +449,7 @@ int main(int argc, char* argv[])
   
   // Queue size: 400 packets
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
+  Config::SetDefault("ns3::WifiMac::MpduBufferSize", UintegerValue(64));
 
   // Aggregation control. Disabled by default to preserve legacy verification behavior.
   const uint32_t maxAmpduSize = enableAggregation ? 65535 : 0;
@@ -300,6 +485,13 @@ int main(int argc, char* argv[])
                   "ActiveProbing", BooleanValue(false));
                   
       staDevices.Add(wifi.Install(phy, mac, wifiStaNodes.Get(i)));
+  }
+
+  for (uint32_t i = 0; i < nSta; ++i)
+  {
+      auto wdev = DynamicCast<WifiNetDevice>(staDevices.Get(i));
+      g_staCams.push_back(wdev->GetMac()->GetChannelAccessManager());
+      g_staVoTxops.push_back(wdev->GetMac()->GetQosTxop(AC_VO));
   }
 
   // Apply CWds / QSRC-threshold / PSRC-limit to every P-EDCA STA's FEM.
@@ -356,7 +548,7 @@ int main(int argc, char* argv[])
   UdpServerHelper server(basePort + voAc);
   ApplicationContainer serverApp = server.Install(wifiApNode.Get(0));
   serverApp.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&ServerRx));
-  serverApp.Start(Seconds(0.5));
+  serverApp.Start(Seconds(std::max(0.0, trafficStartTime - 0.5)));
   serverApp.Stop(Seconds(simTime));
   
   // Clients on STAs: Each STA sends VO traffic only
@@ -375,7 +567,7 @@ int main(int argc, char* argv[])
       client.SetAttribute("Tos", UintegerValue(voTos));
       
       ApplicationContainer clientApp = client.Install(wifiStaNodes.Get(i));
-      double start = 0.5 + startRv->GetValue(0.0, 0.5);
+      double start = trafficStartTime + startRv->GetValue(0.0, trafficStartJitter);
       clientApp.Start(Seconds(start));
       clientApp.Stop(Seconds(simTime));
   }
@@ -397,6 +589,15 @@ int main(int argc, char* argv[])
     phy->TraceConnectWithoutContext(
         "PhyRxPpduDrop",
         MakeBoundCallback(&PhyRxPpduDropCb, label));
+    phy->TraceConnectWithoutContext(
+        "PhyTxPsduBegin",
+        MakeBoundCallback(&PhyTxPsduBeginCb, label == "AP"));
+    if (label != "AP") {
+      wdev->GetMac()->TraceConnectWithoutContext(
+          "MpduResponseTimeout", MakeCallback(&MpduResponseTimeoutCb));
+      wdev->GetMac()->TraceConnectWithoutContext(
+          "PsduResponseTimeout", MakeCallback(&PsduResponseTimeoutCb));
+    }
   };
   connectPhyTraces(apDevices.Get(0), "AP");
   for (uint32_t i = 0; i < nSta; ++i) {
@@ -441,6 +642,51 @@ int main(int argc, char* argv[])
   std::cout << "APP_TX_PACKETS: " << appTxBytes / payloadSize << "\n"
             << "APP_RX_PACKETS: " << udpServer->GetReceived() << "\n"
             << "APP_P99_DELAY_US: " << appP99Us << "\n";
+  auto printDepthHistogram = [](const char* name, const auto& hist) {
+    std::cout << name << ":";
+    for (const auto& [depth, count] : hist) {
+      std::cout << " " << depth << "=" << count;
+    }
+    std::cout << "\n";
+  };
+  std::cout << "--- EDCA_PHY_DIAGNOSTICS ---\n"
+            << "UL_DATA_PPDUS: " << g_edcaDiag.ulDataPpdus << "\n"
+            << "UL_DATA_MPDUS_TX_ATTEMPTS: " << g_edcaDiag.ulDataMpdus << "\n"
+            << "UL_DATA_MSDUS_TX_ATTEMPTS: " << g_edcaDiag.ulDataMsdus << "\n"
+            << "UL_RETRY_MPDUS: " << g_edcaDiag.ulRetryMpdus << "\n"
+            << "UL_SINGLE_MPDUS: " << g_edcaDiag.ulSingleMpdus << "\n"
+            << "UL_AGGREGATION_FLAG_PPDUS: " << g_edcaDiag.ulAggregationFlagPpdus << "\n"
+            << "UL_RTS_PPDUS: " << g_edcaDiag.ulRtsPpdus << "\n"
+            << "UL_CF_END_PPDUS: " << g_edcaDiag.ulCfEndPpdus << "\n"
+            << "AP_CTS_PPDUS: " << g_edcaDiag.apCtsPpdus << "\n"
+            << "AP_ACK_PPDUS: " << g_edcaDiag.apAckPpdus << "\n"
+            << "AP_BLOCK_ACK_PPDUS: " << g_edcaDiag.apBlockAckPpdus << "\n"
+            << "STA_WAIT_CTS_TIMEOUTS: " << g_edcaDiag.staWaitCtsTimeouts << "\n"
+            << "STA_WAIT_ACK_TIMEOUTS: " << g_edcaDiag.staWaitAckTimeouts << "\n"
+            << "STA_WAIT_BLOCK_ACK_TIMEOUTS: " << g_edcaDiag.staWaitBlockAckTimeouts << "\n"
+            << "UL_DATA_AIRTIME_US: " << g_edcaDiag.ulDataAirtimeUs << "\n";
+  printDepthHistogram("AMPDU_DEPTH_HIST", g_edcaDiag.ampduDepth);
+  printDepthHistogram("AMSDU_DEPTH_HIST", g_edcaDiag.amsduDepth);
+  printDepthHistogram("PSDU_SIZE_BYTES_HIST", g_edcaDiag.psduSizeBytes);
+  printDepthHistogram("DATA_PPDU_DURATION_US_HIST", g_edcaDiag.dataPpduDurationUs);
+  printDepthHistogram("RTS_MODE_HIST", g_edcaDiag.rtsModeHist);
+  printDepthHistogram("CTS_MODE_HIST", g_edcaDiag.ctsModeHist);
+  printDepthHistogram("RTS_PPDU_DURATION_US_HIST", g_edcaDiag.rtsPpduDurationUs);
+  printDepthHistogram("CTS_PPDU_DURATION_US_HIST", g_edcaDiag.ctsPpduDurationUs);
+  std::cout << "AVG_NAV_ACTIVE_STAS_AT_RTS: "
+            << (g_rtsStateSamples ? static_cast<double>(g_navActiveAtRtsSum) / g_rtsStateSamples : 0.0)
+            << "\n"
+            << "AVG_NONEMPTY_VO_STAS_AT_RTS: "
+            << (g_rtsStateSamples ? static_cast<double>(g_nonemptyVoAtRtsSum) / g_rtsStateSamples : 0.0)
+            << "\n";
+  printDepthHistogram("NAV_ACTIVE_STAS_AT_RTS_HIST", g_navActiveAtRtsHist);
+  printDepthHistogram("NONEMPTY_VO_STAS_AT_RTS_HIST", g_nonemptyVoAtRtsHist);
+  for (const auto& [reason, count] : g_edcaDiag.apPhyDrops) {
+    std::cout << "AP_PHY_DROP_REASON_" << reason << ": " << count << "\n";
+  }
+  for (const auto& [reason, count] : g_edcaDiag.apRtsPhyDrops) {
+    std::cout << "AP_RTS_PHY_DROP_REASON_" << reason << ": " << count << "\n";
+  }
   
   // ---------------------- WifiTxStatsHelper Output ----------------------
   double duration = simTime - warmupTime;

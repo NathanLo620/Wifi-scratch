@@ -5,10 +5,18 @@ in both English and Traditional-Chinese, straight from the current sweep CSVs.
 
 Data sources (per PHY in {11n,11be} × traffic in {CBR,Poisson,MMPP,OnOff}):
   <phy>/fix_nsta30_CwdsxQSRCxPSRC_sweep[_poisson|_MMPP|_onoff]/
-      combo_percentile_summary_1Mbps.csv        -> min P50/P95/P99 over 36 combos
-      best_vs_default_p99_gain_1Mbps.csv         -> gain vs EDCA-only / default, EDCA P99
-      edca_only/pedca_count_sweep_statistics_edca_only_1Mbps.txt  -> VO loss/queue/access/idle
+      combo_percentile_summary_1Mbps.csv        -> min/median P99 over 36 combos
+      best_vs_default_p99_gain_1Mbps.csv         -> gain vs EDCA-only / default
+      edca_only/pedca_count_sweep_statistics_edca_only_1Mbps.txt  -> VO loss/queue/access/idle/thr
       edca_only/edca_only_p00_vo_delay_pdf_nSta30_1Mbps.csv       -> EDCA-only VO delay CDF
+
+Dataset vintage (IMPORTANT):
+  * 11n  sweeps ran 2026-06-22 on v6.2.1 code.
+  * 11be sweeps re-ran 2026-07-18 on v6.3.2 code (EHT-compat + NAV + FEM fixes),
+    with the PHY re-configured to EhtMcs5 @ GI 1600 ns = 65.0 Mbps, i.e. RATE-MATCHED
+    to 11n HtMcs7 @ GI 800 ns (also 65.0 Mbps).  BA window 64 on both.
+  * --dumpPhy airtime: 1x1000B PPDU EHT 177 us vs HT 160 us (+10.6%);
+    per-MPDU inside a 16-MPDU A-MPDU: 126.25 vs 125.5 us (+0.6%).
 
 Metric conventions (match the original deck):
   * Page-2 P99 bars use delay_type = 'pedca' (P-EDCA STA perspective).
@@ -19,7 +27,7 @@ Outputs (overwrites in place):
   11be_vs_11n_insights_en.pdf
   11be_vs_11n_insights.pdf   (Traditional Chinese)
 """
-import csv, re, textwrap
+import csv, re, statistics, textwrap
 from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
@@ -32,6 +40,7 @@ BASE = Path(__file__).resolve().parent          # .../delay_pdf/11be  (PDF outpu
 DATA = Path(__file__).resolve().parent.parent    # .../delay_pdf       (holds 11n/ and 11be/)
 TRAFFIC = [("CBR", ""), ("Poisson", "_poisson"), ("MMPP", "_MMPP"), ("OnOff", "_onoff")]
 NPEDCAS = [5, 15, 30]
+SIM_TIME = 10.0
 
 # ---- palette (matched to the original deck) ----
 ORANGE = "#E8743B"   # 802.11n
@@ -48,14 +57,19 @@ CARDBD = "#E2E0DC"
 def sdir(phy, suf): return DATA / phy / f"fix_nsta30_CwdsxQSRCxPSRC_sweep{suf}"
 
 def load_summary(phy, suf):
-    rows = list(csv.DictReader(open(sdir(phy, suf) / "combo_percentile_summary_1Mbps.csv")))
+    seen, rows = set(), []
+    for r in csv.DictReader(open(sdir(phy, suf) / "combo_percentile_summary_1Mbps.csv")):
+        k = (r["CWds"], r["QSRC"], r["PSRC"], r["nPedca"], r["delay_type"])
+        if k in seen: continue                     # summaries are 2x-duplicated after resume
+        seen.add(k); rows.append(r)
     out = {}
-    for dt in ("pedca", "all", "legacy"):
+    for dt in ("pedca", "vo", "legacy"):
         for n in NPEDCAS:
             sub = [r for r in rows if r["delay_type"] == dt and int(r["nPedca"]) == n]
             if not sub: continue
             best = min(sub, key=lambda r: float(r["P99_us"]))
             out[(dt, n)] = dict(minP99=float(best["P99_us"]),
+                                medP99=statistics.median(float(r["P99_us"]) for r in sub),
                                 combo=f"c{best['CWds']}q{best['QSRC']}s{best['PSRC']}")
     return out
 
@@ -75,8 +89,11 @@ def load_edca_vo(phy, suf):
     if vo:
         t = vo.group(1)
         for k, p in [("loss", r"Packet Loss:\s*([\d.]+)"), ("queue", r"Avg Queue Delay:\s*(-?[\d.]+)"),
-                     ("access", r"Avg Access Delay:\s*(-?[\d.]+)")]:
+                     ("access", r"Avg Access Delay:\s*(-?[\d.]+)"), ("thr", r"Throughput:\s*([\d.]+)"),
+                     ("succ", r"Successes:\s*([\d.]+)")]:
             mm = re.search(p, t); d[k] = float(mm.group(1)) if mm else 0
+    # channel-busy airtime spent per successfully delivered VO MPDU (us)
+    d["busy_per_mpdu"] = (100 - d["idle"]) / 100 * SIM_TIME / d["succ"] * 1e6 if d.get("succ") else 0
     return d
 
 def load_cdf(phy, suf):
@@ -105,18 +122,49 @@ def rng(vals, f="%.0f"):
     lo, hi = min(vals), max(vals)
     return f % lo, f % hi
 
+def best_delta(n):
+    """(11be - 11n)/11n % on best-of-36 P-EDCA-STA P99, per traffic."""
+    out = []
+    for tn, _ in TRAFFIC:
+        a = D["11n"][tn]["summary"][("pedca", n)]["minP99"]
+        b = D["11be"][tn]["summary"][("pedca", n)]["minP99"]
+        out.append((b - a) / a * 100)
+    return out
+
+def med_delta(n):
+    out = []
+    for tn, _ in TRAFFIC:
+        a = D["11n"][tn]["summary"][("pedca", n)]["medP99"]
+        b = D["11be"][tn]["summary"][("pedca", n)]["medP99"]
+        out.append((b - a) / a * 100)
+    return out
+
 p99_n30 = {tn: (D["11n"][tn]["summary"][("pedca", 30)]["minP99"] / 1000,
                D["11be"][tn]["summary"][("pedca", 30)]["minP99"] / 1000) for tn, _ in TRAFFIC}
-red_n30 = [(a - b) / a * 100 for a, b in p99_n30.values()]          # reduction %
+red_n30 = [(a - b) / a * 100 for a, b in p99_n30.values()]          # reduction % (positive = 11be better)
 be_n30  = [b for _, b in p99_n30.values()]
 n_n30   = [a for a, _ in p99_n30.values()]
+d5, d15, dmed30 = best_delta(5), best_delta(15), med_delta(30)
 loss_n  = [D["11n"][tn]["edca"]["loss"] for tn, _ in TRAFFIC]
 loss_be = [D["11be"][tn]["edca"]["loss"] for tn, _ in TRAFFIC]
 gain_be = [D["11be"][tn]["gain"][("pedca", 30)]["gain_vs_EDCA"] for tn, _ in TRAFFIC]
 gain_n  = [D["11n"][tn]["gain"][("pedca", 30)]["gain_vs_EDCA"] for tn, _ in TRAFFIC]
-# EDCA-only PHY P99 improvement per traffic (11n->11be)
-phy_p99_gain = [(D["11n"][tn]["cdf"]["P99"] - D["11be"][tn]["cdf"]["P99"]) / D["11n"][tn]["cdf"]["P99"] * 100
-                for tn, _ in TRAFFIC]
+gain_be5 = [D["11be"][tn]["gain"][("pedca", 5)]["gain_vs_EDCA"] for tn, _ in TRAFFIC]
+gain_n5  = [D["11n"][tn]["gain"][("pedca", 5)]["gain_vs_EDCA"] for tn, _ in TRAFFIC]
+# EDCA-only PHY P99 delta per traffic (11be vs 11n; positive = 11be worse)
+phy_p99_delta = [(D["11be"][tn]["cdf"]["P99"] - D["11n"][tn]["cdf"]["P99"]) / D["11n"][tn]["cdf"]["P99"] * 100
+                 for tn, _ in TRAFFIC]
+phy_p99_ratio = [D["11be"][tn]["cdf"]["P99"] / D["11n"][tn]["cdf"]["P99"] for tn, _ in TRAFFIC]
+edca_p99_n  = [D["11n"][tn]["cdf"]["P99"] for tn, _ in TRAFFIC]
+edca_p99_be = [D["11be"][tn]["cdf"]["P99"] for tn, _ in TRAFFIC]
+thr_delta = [(D["11be"][tn]["edca"]["thr"] - D["11n"][tn]["edca"]["thr"]) / D["11n"][tn]["edca"]["thr"] * 100
+             for tn, _ in TRAFFIC]
+busy_delta = [(D["11be"][tn]["edca"]["busy_per_mpdu"] - D["11n"][tn]["edca"]["busy_per_mpdu"])
+              / D["11n"][tn]["edca"]["busy_per_mpdu"] * 100 for tn, _ in TRAFFIC]
+queue_delta = [(D["11be"][tn]["edca"]["queue"] - D["11n"][tn]["edca"]["queue"])
+               / D["11n"][tn]["edca"]["queue"] * 100 for tn, _ in TRAFFIC]
+access_delta = [(D["11be"][tn]["edca"]["access"] - D["11n"][tn]["edca"]["access"])
+                / D["11n"][tn]["edca"]["access"] * 100 for tn, _ in TRAFFIC]
 
 # ═════════════════════════ language strings ═════════════════════════
 def L(en, zh, lang): return zh if lang == "zh" else en
@@ -131,8 +179,8 @@ def wrap_lines(text, width_en, lang):
 
 def strings(lang):
     S = {}
-    S["footer"] = L("ns-3.45 P-EDCA simulations | scratch/delay_pdf/{11n,11be} | 2026-07-13",
-                    "ns-3.45 P-EDCA 模擬 | scratch/delay_pdf/{11n,11be} | 2026-07-13", lang)
+    S["footer"] = L("ns-3.45 P-EDCA sims | scratch/delay_pdf/{11n,11be} | 11n: 2026-06-22 (v6.2.1) · 11be: 2026-07-18 (v6.3.2)",
+                    "ns-3.45 P-EDCA 模擬 | scratch/delay_pdf/{11n,11be} | 11n：2026-06-22(v6.2.1)· 11be：2026-07-18(v6.3.2)", lang)
     return S
 
 # ═════════════════════════ drawing helpers ═════════════════════════
@@ -140,11 +188,11 @@ def footer(fig, s, page):
     fig.text(0.045, 0.035, s["footer"], fontsize=7.5, color=FAINT, va="center")
     fig.text(0.955, 0.035, f"{page} / 4", fontsize=7.5, color=FAINT, va="center", ha="right")
 
-def card(fig, x, y, w, h, big, sub, small, big_color=INK):
+def card(fig, x, y, w, h, big, sub, small, big_color=INK, big_fs=25):
     ax = fig.add_axes([x, y, w, h]); ax.axis("off")
     ax.add_patch(FancyBboxPatch((0.02, 0.04), 0.96, 0.92, boxstyle="round,pad=0.01,rounding_size=0.04",
                  fc=CARDBG, ec=CARDBD, lw=1, transform=ax.transAxes))
-    ax.text(0.5, 0.70, big, ha="center", va="center", fontsize=25, fontweight="bold",
+    ax.text(0.5, 0.70, big, ha="center", va="center", fontsize=big_fs, fontweight="bold",
             color=big_color, transform=ax.transAxes)
     ax.text(0.5, 0.40, sub, ha="center", va="center", fontsize=10.5, color=INK, transform=ax.transAxes)
     ax.text(0.5, 0.20, small, ha="center", va="center", fontsize=8.2, color=MUTED, transform=ax.transAxes)
@@ -162,8 +210,8 @@ def title_block(fig, title, subtitle):
 # ═════════════════════════ page builders ═════════════════════════
 def page1(pdf, lang, s):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
-    ttl = L("802.11be vs 802.11n: P-EDCA Tail-Latency Comparison",
-            "802.11be vs 802.11n：P-EDCA 尾延遲效能比較", lang)
+    ttl = L("802.11be vs 802.11n: Rate-Matched P-EDCA Tail-Latency Comparison",
+            "802.11be vs 802.11n：速率對齊下的 P-EDCA 尾延遲比較", lang)
     sub = L("CWds × QSRC × PSRC parameter sweep | CBR / Poisson / MMPP / OnOff traffic | P-EDCA STA perspective",
             "CWds × QSRC × PSRC 參數掃描 | CBR / Poisson / MMPP / OnOff 四種流量 | P-EDCA STA 視角", lang)
     title_block(fig, ttl, sub)
@@ -174,11 +222,12 @@ def page1(pdf, lang, s):
                                        "30 STAs → 1 AP，隨機分布於 1–5 m；5 GHz ch36 / 20 MHz", lang)),
         (L("Traffic", "流量", lang), L("Uplink AC_VO UDP, 1 Mbps per STA (1000 B); CBR / Poisson / MMPP / OnOff",
                                       "上行 AC_VO UDP，每 STA 1 Mbps(1000 B)；CBR / Poisson / MMPP / OnOff", lang)),
-        (L("PHY", "PHY", lang), "11n = HtMcs7 (65 Mbps)  vs  11be = EhtMcs7 (73.1 Mbps @ 3.2 µs GI)"),
-        (L("Control", "控制幀", lang), L("OFDM 6 Mbps for both; A-MPDU on; VO TXOP limit 2.08 ms",
-                                        "兩者同為 OFDM 6 Mbps；A-MPDU 開啟；VO TXOP 上限 2.08 ms", lang)),
-        (L("Fairness", "公平性", lang), L("The two programs differ by exactly 2 lines (SetStandard / DataMode)",
-                                         "兩標準的模擬程式僅差 2 行(SetStandard / DataMode)，其餘相同", lang)),
+        (L("PHY", "PHY", lang), L("11n = HtMcs7 @ 0.8 µs GI  vs  11be = EhtMcs5 @ 1.6 µs GI — both 65.0 Mbps (rate-matched)",
+                                  "11n = HtMcs7 @ 0.8 µs GI vs 11be = EhtMcs5 @ 1.6 µs GI — 同為 65.0 Mbps(速率對齊)", lang)),
+        (L("Airtime", "空中時間", lang), L("1×1000 B PPDU: EHT 177 µs vs HT 160 µs (+10.6%); per-MPDU @16× A-MPDU +0.6%",
+                                          "單 MPDU PPDU：EHT 177 µs vs HT 160 µs(+10.6%)；16 條聚合時 per-MPDU 僅 +0.6%", lang)),
+        (L("Control", "控制幀", lang), L("OFDM 6 Mbps for both; A-MPDU on, BA window 64 on both; VO TXOP limit 2.08 ms",
+                                        "兩者同為 OFDM 6 Mbps；A-MPDU 開啟、BA window 皆 64；VO TXOP 上限 2.08 ms", lang)),
         (L("Sweep", "掃描", lang), "nPedca ∈ {5, 15, 30}; CWds{0,1} × QSRC{0–5} × PSRC{1–3} = 36 combos"),
         (L("Statistics", "統計", lang), L("10 seeds × 10 s per point; plus an EDCA-only baseline (nPedca = 0)",
                                          "每點 10 seeds × 10 s；另含純 EDCA 基準(nPedca = 0)", lang)),
@@ -188,31 +237,39 @@ def page1(pdf, lang, s):
         fig.text(0.055, y, k, fontsize=10, fontweight="bold", color=INK, va="center")
         fig.text(0.16, y, v, fontsize=10, color="#333", va="center")
         y -= 0.048
-    fig.text(0.045, y - 0.005, L("Data integrity: 4 traffic × 290 delay histograms are independent runs "
-                                 "(11n / 11be md5 all differ)",
-                                 "資料完整性：4 流量 × 290 個延遲直方圖皆為獨立模擬(11n / 11be md5 全數相異)", lang),
-             fontsize=8, color=FAINT, va="center")
+    cav = L("Caveat: 11n data ran 2026-06-22 on v6.2.1 code; 11be re-ran 2026-07-18 on v6.3.2 (EHT NAV / "
+            "frame-exchange fixes) — cross-standard deltas mix PHY and code-vintage effects.",
+            "注意：11n 資料為 2026-06-22 以 v6.2.1 程式所跑；11be 於 2026-07-18 以 v6.3.2(EHT NAV／幀交換修正)重跑 — "
+            "跨標準差異混合了 PHY 與程式版本效應。", lang)
+    yc = y - 0.005
+    for ln in wrap_lines(cav, 95, lang):        # width-capped so it stays clear of the cards
+        fig.text(0.045, yc, ln, fontsize=8, color=FAINT, va="center")
+        yc -= 0.022
 
     # cards (recomputed)
     c1_lo, c1_hi = rng(red_n30)
+    r_lo, r_hi = min(phy_p99_ratio), max(phy_p99_ratio)
     card(fig, 0.60, 0.66, 0.35, 0.155,
          f"P99  −{c1_hi}% ~ −{c1_lo}%",
-         L("Tail latency at full P-EDCA load (30/30), best params",
-           "重載(30/30 全 P-EDCA)最佳參數下的尾延遲", lang),
-         L(f"Consistent across 4 traffic; 11be {min(be_n30):.1f}–{max(be_n30):.1f} ms vs 11n {min(n_n30):.0f}–{max(n_n30):.0f} ms",
-           f"四種流量一致；11be {min(be_n30):.1f}–{max(be_n30):.1f} ms vs 11n {min(n_n30):.0f}–{max(n_n30):.0f} ms", lang),
+         L("Full P-EDCA penetration (30/30), best params: 11be wins",
+           "全滲透(30/30 P-EDCA)最佳參數下：11be 勝出", lang),
+         L(f"11be {min(be_n30):.1f}–{max(be_n30):.1f} ms vs 11n {min(n_n30):.0f}–{max(n_n30):.0f} ms — only at n=30 (see p.2)",
+           f"11be {min(be_n30):.1f}–{max(be_n30):.1f} ms vs 11n {min(n_n30):.0f}–{max(n_n30):.0f} ms — 僅限 n=30(見第 2 頁)", lang),
          big_color=GREEN)
     card(fig, 0.60, 0.475, 0.35, 0.155,
-         f"Loss  {min(loss_n):.0f}–{max(loss_n):.0f}% → {min(loss_be):.0f}–{max(loss_be):.0f}%",
-         L("VO retry-limit loss, EDCA-only baseline", "純 EDCA 基準的 VO retry-limit 損失率", lang),
-         L("Same params & load; 11n stuck in collision feedback, 11be not",
-           "同參數、同負載；11n 深陷碰撞回饋、11be 未達", lang),
-         big_color=GREEN)
+         f"EDCA-only  ×{r_lo:.1f}–{r_hi:.1f}",
+         L("Without P-EDCA the rate-matched 11be tail is WORSE",
+           "無 P-EDCA 時，速率對齊的 11be 尾延遲反而更差", lang),
+         L(f"P99 {min(edca_p99_n):.0f}–{max(edca_p99_n):.0f} → {min(edca_p99_be):.0f}–{max(edca_p99_be):.0f} ms; "
+           f"carried VO throughput {min(thr_delta):.0f}% ~ {max(thr_delta):.0f}%",
+           f"P99 {min(edca_p99_n):.0f}–{max(edca_p99_n):.0f} → {min(edca_p99_be):.0f}–{max(edca_p99_be):.0f} ms；"
+           f"VO 承載吞吐 {min(thr_delta):.0f}% ~ {max(thr_delta):.0f}%", lang),
+         big_color=RED)
     card(fig, 0.60, 0.29, 0.35, 0.155,
          f"+{min(gain_be):.0f}% ~ +{max(gain_be):.0f}% vs EDCA",
-         L("P-EDCA still pays off at full penetration on 11be", "11be 上 P-EDCA 機制在全滲透仍大幅有效", lang),
-         L(f"Only +{min(gain_n):.0f}% to +{max(gain_n):.0f}% on 11n — P-EDCA value grows with the PHY generation",
-           f"11n 上僅 +{min(gain_n):.0f}% ~ +{max(gain_n):.0f}% — P-EDCA 價值隨 PHY 世代放大", lang))
+         L("P-EDCA value at n=30 is huge on 11be, tiny on 11n", "n=30 時 P-EDCA 在 11be 上增益極大、11n 上極小", lang),
+         L(f"11n only +{min(gain_n):.0f}% ~ +{max(gain_n):.0f}% — the penetration trends run in OPPOSITE directions",
+           f"11n 僅 +{min(gain_n):.0f}% ~ +{max(gain_n):.0f}% — 兩者的滲透率趨勢方向相反", lang))
 
     # takeaway
     ax = fig.add_axes([0.045, 0.10, 0.52, 0.16]); ax.axis("off")
@@ -220,20 +277,20 @@ def page1(pdf, lang, s):
                  fc="#FAFAF9", ec=CARDBD, lw=1, transform=ax.transAxes))
     ax.text(0.04, 0.80, L("One-line takeaway", "一句話結論", lang), fontsize=11, fontweight="bold",
             color=INK, transform=ax.transAxes)
-    ax.text(0.04, 0.42, L("11be's edge is NOT faster per-frame airtime (access delay nearly identical) — it\n"
-                          "pulls the system off the high-collision operating point: at heavy load the tail\n"
-                          "roughly halves and the P-EDCA mechanism becomes worthwhile again.",
-                          "11be 的優勢不在「每一幀傳得快」(access delay 幾乎相同)，\n"
-                          "而在把系統從高碰撞的操作點拉回 → 重載下尾延遲約砍半，\n"
-                          "P-EDCA 機制重新變得有價值。", lang),
+    ax.text(0.04, 0.42, L("At the SAME 65 Mbps PHY rate, 11be's fixed per-PPDU overhead makes its saturated EDCA\n"
+                          "baseline ~2× worse at P99; aggressive P-EDCA (QSRC0/PSRC3) reclaims that dead time and\n"
+                          "pushes fully-penetrated 11be 22–46% below the best 11n — but partial penetration still trails.",
+                          "在相同 65 Mbps PHY 速率下，11be 每 PPDU 的固定開銷使其飽和 EDCA 基準\n"
+                          "P99 差約 2 倍；積極 P-EDCA(QSRC0/PSRC3)把這些死時間收回來，\n"
+                          "讓全滲透的 11be 比最佳 11n 低 22–46% — 但部分滲透時 11be 仍落後。", lang),
             fontsize=9.5, color="#333", va="center", transform=ax.transAxes, linespacing=1.5)
     footer(fig, s, 1); pdf.savefig(fig); plt.close(fig)
 
 def page2(pdf, lang, s):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Core result: P-EDCA P99 latency — 11be's edge grows with load",
-          "核心結果：P-EDCA P99 延遲 — 11be 的優勢隨負載增大", lang),
+        L("Core result: P-EDCA P99 latency — 11be only wins at FULL penetration",
+          "核心結果：P-EDCA P99 延遲 — 11be 只在「全滲透」時勝出", lang),
         L("Minimum P99 over the 36-combo sweep, per traffic × nPedca (mean of 10 seeds; ms)",
           "36 組合掃描的最小 P99，依流量 × nPedca(10 seeds 平均；ms)", lang))
     # legend
@@ -265,21 +322,31 @@ def page2(pdf, lang, s):
         ax.grid(axis="y", alpha=0.25)
 
     bullets = [
-        L(f"Light P-EDCA load n=5: 11be shows NO gain, even a penalty (CBR +6%, bursty +74–84%) — "
-          f"few P-EDCA STAs, the priority channel is uncongested and the faster PHY does not help the subset tail.",
-          f"輕 P-EDCA 負載 n=5：11be 毫無優勢、甚至更差(CBR +6%，突發流量 +74–84%) — "
-          f"P-EDCA STA 少、優先通道不擁塞，較快的 PHY 幫不到此子集的尾端。", lang),
-        L(f"Medium n=15: 11be −16% to −29%.  Heavy n=30: 11be −{min(red_n30):.0f}% to −{max(red_n30):.0f}% "
+        L(f"Light penetration n=5: 11be is far WORSE (+{min(d5):.0f}% to +{max(d5):.0f}%). 11n's small P-EDCA subset "
+          f"rides a healthy baseline and reaches {min(D['11n'][tn]['summary'][('pedca',5)]['minP99'] for tn,_ in TRAFFIC)/1000:.1f}–"
+          f"{max(D['11n'][tn]['summary'][('pedca',5)]['minP99'] for tn,_ in TRAFFIC)/1000:.1f} ms; 11be's subset "
+          f"is dragged by its congested surroundings (23–31 ms).",
+          f"低滲透 n=5：11be 明顯較差(+{min(d5):.0f}% ~ +{max(d5):.0f}%)。11n 的少數 P-EDCA STA 騎在健康的基準上，"
+          f"可達 {min(D['11n'][tn]['summary'][('pedca',5)]['minP99'] for tn,_ in TRAFFIC)/1000:.1f}–"
+          f"{max(D['11n'][tn]['summary'][('pedca',5)]['minP99'] for tn,_ in TRAFFIC)/1000:.1f} ms；"
+          f"11be 的子集被壅塞的環境拖累(23–31 ms)。", lang),
+        L(f"Medium n=15: still +{min(d15):.0f}% to +{max(d15):.0f}%.  Full penetration n=30: the sign flips — "
+          f"11be −{min(red_n30):.0f}% to −{max(red_n30):.0f}% "
           f"(11n {min(n_n30):.0f}–{max(n_n30):.0f} ms vs 11be {min(be_n30):.1f}–{max(be_n30):.1f} ms).",
-          f"中載 n=15：11be −16% ~ −29%。重載 n=30：11be −{min(red_n30):.0f}% ~ −{max(red_n30):.0f}% "
+          f"中滲透 n=15：仍 +{min(d15):.0f}% ~ +{max(d15):.0f}%。全滲透 n=30：符號翻轉 — "
+          f"11be −{min(red_n30):.0f}% ~ −{max(red_n30):.0f}% "
           f"(11n {min(n_n30):.0f}–{max(n_n30):.0f} ms vs 11be {min(be_n30):.1f}–{max(be_n30):.1f} ms)。", lang),
-        L("The n=5 penalty is consistent across the whole 36-combo distribution (medians too), not a min-artifact — "
-          "it is the low-contention regime where the P-EDCA subset tail is arrival-driven and noisy.",
-          "n=5 的劣勢在整個 36 組合分布(含中位數)都一致，並非最小值假象 — "
-          "這是低競爭區間，P-EDCA 子集尾端由到達過程主導、雜訊大。", lang),
-        L("Best combos: both PHYs prefer aggressive PSRC=3 and small QSRC (0–2); 11n's slow large-CW retries "
-          "under load still cannot recover → saturated at 17–21 ms.",
-          "最佳組合：兩 PHY 都偏好積極的 PSRC=3、小 QSRC(0–2)；11n 在重載下的大 CW 慢速重傳仍無法回復 → 飽和在 17–21 ms。", lang),
+        L(f"The n=30 win is parameter-dependent, not free: the MEDIAN over all 36 combos is still "
+          f"+{min(dmed30):.0f}% to +{max(dmed30):.0f}% (11be worse); only aggressive QSRC 0–1 + PSRC 3 flips the sign. "
+          f"All four 11be winners are c*q0s3.",
+          f"n=30 的勝出依賴參數、並非白吃：36 組合的中位數仍 +{min(dmed30):.0f}% ~ +{max(dmed30):.0f}%(11be 較差)；"
+          f"只有積極的 QSRC 0–1 + PSRC 3 能翻轉符號。11be 四個流量的最佳組合都是 c*q0s3。", lang),
+        L(f"Gain-vs-own-EDCA runs in OPPOSITE directions with penetration: 11n +{min(gain_n5):.0f}~+{max(gain_n5):.0f}% "
+          f"at n=5 collapsing to +{min(gain_n):.0f}~+{max(gain_n):.0f}% at n=30 (priority dilutes); 11be "
+          f"+{min(gain_be5):.0f}~+{max(gain_be5):.0f}% rising to +{min(gain_be):.0f}~+{max(gain_be):.0f}%.",
+          f"「相對自身 EDCA 的增益」隨滲透率的走向相反：11n 從 n=5 的 +{min(gain_n5):.0f}~+{max(gain_n5):.0f}% "
+          f"崩落到 n=30 的 +{min(gain_n):.0f}~+{max(gain_n):.0f}%(優先權被稀釋)；11be 則從 "
+          f"+{min(gain_be5):.0f}~+{max(gain_be5):.0f}% 升到 +{min(gain_be):.0f}~+{max(gain_be):.0f}%。", lang),
     ]
     y = 0.215
     for bl in bullets:
@@ -291,16 +358,16 @@ def page2(pdf, lang, s):
 def page3(pdf, lang, s):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Mechanism: queueing & collisions, not frame speed",
-          "機制：排隊與碰撞，而非傳輸速度", lang),
-        L("The whole delay distribution shifts left. EDCA-only baseline (no P-EDCA, 30 STAs) isolates the two PHY generations.",
-          "整個延遲分布左移。純 EDCA 基準(無 P-EDCA，30 STA)可隔離兩個 PHY 世代。", lang))
+        L("Mechanism: per-PPDU overhead amplified by saturation queueing",
+          "機制：每 PPDU 固定開銷被飽和排隊放大", lang),
+        L("EDCA-only baseline (no P-EDCA, 30 STAs) isolates the two PHYs at the same 65 Mbps — 11be's whole distribution shifts right.",
+          "純 EDCA 基準(無 P-EDCA，30 STA)在同為 65 Mbps 下隔離兩個 PHY — 11be 的整個延遲分布右移。", lang))
 
     for i, tn in enumerate(["CBR", "OnOff"]):
         ax = fig.add_axes([0.06 + i * 0.24, 0.42, 0.20, 0.36])
         for phy, col in [("11n", ORANGE), ("11be", BLUE)]:
             c = D[phy][tn]["cdf"]; ax.plot(c["mids"], c["cdf"], color=col, lw=1.8, label=f"802.{phy}")
-        ax.set_xlim(0, 25); ax.set_ylim(0, 1.02)
+        ax.set_xlim(0, 55); ax.set_ylim(0, 1.02)
         ax.set_title(L(f"{tn} (EDCA-only) VO delay CDF", f"{tn}(純 EDCA)VO 延遲 CDF", lang),
                      fontsize=10.5, fontweight="bold", color=INK)
         ax.set_xlabel(L("Delay (ms)", "延遲 (ms)", lang), fontsize=9)
@@ -327,22 +394,25 @@ def page3(pdf, lang, s):
     p10 = [(D["11be"][tn]["cdf"]["P10"] - D["11n"][tn]["cdf"]["P10"]) / D["11n"][tn]["cdf"]["P10"] * 100 for tn, _ in TRAFFIC]
     p50 = [(D["11be"][tn]["cdf"]["P50"] - D["11n"][tn]["cdf"]["P50"]) / D["11n"][tn]["cdf"]["P50"] * 100 for tn, _ in TRAFFIC]
     bullets = [
-        L(f"P10: 11be +{min(p10):.0f}~+{max(p10):.0f}% (longer EHT preamble on one uncontended access); "
-          f"P50: {min(p50):.0f}~{max(p50):.0f}%; P99: −{min(phy_p99_gain):.0f}~−{max(phy_p99_gain):.0f}% — "
-          f"same floor, 11be pulls ahead from the median toward the tail.",
-          f"P10：11be +{min(p10):.0f}~+{max(p10):.0f}%(單次無競爭存取的 EHT preamble 較長)；"
-          f"P50：{min(p50):.0f}~{max(p50):.0f}%；P99：−{min(phy_p99_gain):.0f}~−{max(phy_p99_gain):.0f}% — "
-          f"起點相同，11be 從中位數往尾端才拉開。", lang),
-        L(f"PHY gain shrinks with burstiness: EDCA-only P99 gain CBR −{phy_p99_gain[0]:.0f}% → "
-          f"Poisson −{phy_p99_gain[1]:.0f}% → MMPP −{phy_p99_gain[2]:.0f}% → OnOff −{phy_p99_gain[3]:.0f}% "
-          f"(burst-scale queueing is arrival-driven).",
-          f"PHY 增益隨突發性縮小：純 EDCA P99 增益 CBR −{phy_p99_gain[0]:.0f}% → "
-          f"Poisson −{phy_p99_gain[1]:.0f}% → MMPP −{phy_p99_gain[2]:.0f}% → OnOff −{phy_p99_gain[3]:.0f}% "
-          f"(突發尺度的排隊由到達過程主導)。", lang),
-        L(f"P-EDCA view: on loaded 11n the DS-CTS overhead barely pays (+{min(gain_n):.0f}~+{max(gain_n):.0f}%); "
-          f"on 11be the same mechanism still has headroom and yields +{min(gain_be):.0f}~+{max(gain_be):.0f}%.",
-          f"P-EDCA 視角：重載 11n 上 DS-CTS 開銷幾乎不划算(+{min(gain_n):.0f}~+{max(gain_n):.0f}%)；"
-          f"11be 上同機制仍有餘裕，帶來 +{min(gain_be):.0f}~+{max(gain_be):.0f}%。", lang),
+        L(f"The right-shift grows toward the tail: P10 +{min(p10):.0f}~+{max(p10):.0f}% (≈ the longer EHT preamble), "
+          f"P50 +{min(p50):.0f}~+{max(p50):.0f}%, P99 +{min(phy_p99_delta):.0f}~+{max(phy_p99_delta):.0f}% — "
+          f"the signature of a queueing system pushed deeper into saturation, not of slower frames.",
+          f"右移幅度往尾端遞增：P10 +{min(p10):.0f}~+{max(p10):.0f}%(≈較長的 EHT preamble)、"
+          f"P50 +{min(p50):.0f}~+{max(p50):.0f}%、P99 +{min(phy_p99_delta):.0f}~+{max(phy_p99_delta):.0f}% — "
+          f"這是排隊系統被推得更深入飽和的特徵，而非「每幀變慢」。", lang),
+        L(f"The deficit widens with burstiness: carried VO throughput {thr_delta[0]:.0f}% (CBR) → {thr_delta[1]:.0f}% "
+          f"(Poisson) → {thr_delta[2]:.0f}% (MMPP) → {thr_delta[3]:.0f}% (OnOff); busy airtime per delivered MPDU "
+          f"+{min(busy_delta):.0f}% → +{max(busy_delta):.0f}% — burstier arrivals mean more small PPDUs, "
+          f"each paying the fixed EHT preamble tax.",
+          f"劣勢隨突發性擴大：VO 承載吞吐 {thr_delta[0]:.0f}%(CBR) → {thr_delta[1]:.0f}%(Poisson) → "
+          f"{thr_delta[2]:.0f}%(MMPP) → {thr_delta[3]:.0f}%(OnOff)；每成功送達 MPDU 的忙碌空時 "
+          f"+{min(busy_delta):.0f}% ~ +{max(busy_delta):.0f}% — 越突發、小 PPDU 越多，每個都付一次固定 preamble 稅。", lang),
+        L(f"P-EDCA view: at n=30 the DS-CTS mechanism barely pays on 11n (+{min(gain_n):.0f}~+{max(gain_n):.0f}%) "
+          f"but recovers 11be's dead time (+{min(gain_be):.0f}~+{max(gain_be):.0f}%), landing 11be at "
+          f"{min(be_n30):.1f}–{max(be_n30):.1f} ms — below 11n's best.",
+          f"P-EDCA 視角：n=30 時 DS-CTS 機制在 11n 上幾乎不划算(+{min(gain_n):.0f}~+{max(gain_n):.0f}%)，"
+          f"在 11be 上卻收回大量死時間(+{min(gain_be):.0f}~+{max(gain_be):.0f}%)，"
+          f"使 11be 落在 {min(be_n30):.1f}–{max(be_n30):.1f} ms — 低於 11n 的最佳值。", lang),
     ]
     y = 0.32
     for bl in bullets:
@@ -354,28 +424,26 @@ def page3(pdf, lang, s):
 def page4(pdf, lang, s):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Root cause: different fixed points of the collision-queueing feedback loop",
-          "根本原因：碰撞–排隊回饋迴路的不同固定點", lang),
-        L("Per-frame airtime is nearly identical (EHT +12% payload rate, longer preamble) — the cause is the operating point, not raw speed",
-          "每幀空中時間幾乎相同(EHT +12% 酬載率、preamble 較長) — 原因是操作點，而非原始速度", lang))
+        L("Root cause: a fixed per-access tax amplified by queueing",
+          "根本原因：每次存取的固定稅被排隊放大", lang),
+        L("Rate-matched at 65 Mbps — the difference is per-PPDU overhead and operating point, not per-bit speed",
+          "速率對齊在 65 Mbps — 差異來自每 PPDU 開銷與操作點，而非每位元速度", lang))
 
-    fig.text(0.045, 0.80, L("Causal chain (11n stuck at the high-collision fixed point; 11be at the low one)",
-                            "因果鏈(11n 卡在高碰撞固定點；11be 在低碰撞固定點)", lang),
+    fig.text(0.045, 0.80, L("Causal chain (EDCA-only, 30 saturated VO STAs; measured values)",
+                            "因果鏈(純 EDCA，30 個飽和 VO STA；皆為實測值)", lang),
              fontsize=12, fontweight="bold", color=INK)
     ax = fig.add_axes([0.045, 0.62, 0.91, 0.15]); ax.axis("off"); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
     boxes = [
-        L("EhtMcs7 service margin:\n~12% more payload per\n2.08 ms TXOP; retry\nrounds slightly shorter",
-          "EhtMcs7 服務餘裕：\n每 2.08 ms TXOP 多 ~12%\n酬載；重傳回合略短", lang),
-        L("Service headroom up,\nqueue sojourn down,\nfewer simultaneously\nbacklogged STAs",
-          "服務餘裕上升，\n佇列滯留下降，\n同時積壓的 STA 變少", lang),
-        L("VO CWmin=3 (4 slots):\ncollision rate very\nsensitive to contender\ncount → collisions drop",
-          "VO CWmin=3(4 槽)：\n碰撞率對競爭者數\n極敏感 → 碰撞下降", lang),
-        L(f"Shorter retry chains;\nretry-limit loss\n{min(loss_n):.0f}–{max(loss_n):.0f}% → "
-          f"{min(loss_be):.0f}–{max(loss_be):.0f}%\n(measured, EDCA-only)",
-          f"重傳鏈變短；\nretry-limit 損失\n{min(loss_n):.0f}–{max(loss_n):.0f}% → "
-          f"{min(loss_be):.0f}–{max(loss_be):.0f}%\n(實測，純 EDCA)", lang),
-        L(f"Feedback settles at a\nlow-collision fixed point:\ndistribution shifts,\nP99 −{min(phy_p99_gain):.0f}% to −{max(phy_p99_gain):.0f}%",
-          f"回饋收斂到低碰撞\n固定點：分布左移，\nP99 −{min(phy_p99_gain):.0f}% ~ −{max(phy_p99_gain):.0f}%", lang),
+        L("Same 65 Mbps rate, but\nEHT pays +17 µs/PPDU\n(preamble + 14.4 µs\nsymbol padding): +10.6%\non a 1-MPDU PPDU",
+          "同為 65 Mbps，但 EHT\n每 PPDU 多付 +17 µs\n(preamble + 14.4 µs\n符號填補)：單 MPDU\nPPDU +10.6%", lang),
+        L(f"Saturation = many small\nPPDUs → busy airtime per\ndelivered MPDU\n+{min(busy_delta):.0f}% ~ +{max(busy_delta):.0f}%",
+          f"飽和下多為小 PPDU →\n每成功 MPDU 的忙碌\n空時 +{min(busy_delta):.0f}% ~ +{max(busy_delta):.0f}%", lang),
+        L(f"Service efficiency drops:\ncarried VO throughput\n{min(thr_delta):.0f}% ~ {max(thr_delta):.0f}%\nat identical offered load",
+          f"服務效率下降：\n同樣供給負載下\nVO 承載吞吐\n{min(thr_delta):.0f}% ~ {max(thr_delta):.0f}%", lang),
+        L(f"Queues sit deeper:\navg queue delay\n+{min(queue_delta):.0f}% ~ +{max(queue_delta):.0f}%\n(loss ≈ same → NOT\nmore collisions)",
+          f"佇列更深：\n平均佇列延遲\n+{min(queue_delta):.0f}% ~ +{max(queue_delta):.0f}%\n(損失率近似 → 並非\n碰撞變多)", lang),
+        L(f"Queueing amplifies\ntoward the tail:\nP50 +12~23%,\nP99 ×{min(phy_p99_ratio):.1f}–×{max(phy_p99_ratio):.1f}",
+          f"排隊往尾端放大：\nP50 +12~23%，\nP99 ×{min(phy_p99_ratio):.1f}–×{max(phy_p99_ratio):.1f}", lang),
     ]
     bw = 0.178
     for i, bx in enumerate(boxes):
@@ -389,7 +457,7 @@ def page4(pdf, lang, s):
     fig.text(0.045, 0.545, L("Supporting evidence (EDCA-only, 30 STAs; 11n → 11be)",
                              "佐證(純 EDCA，30 STA；11n → 11be)", lang),
              fontsize=11.5, fontweight="bold", color=INK)
-    cols = [L("Traffic", "流量", lang), L("VO collision loss", "VO 碰撞損失", lang),
+    cols = [L("Traffic", "流量", lang), L("VO retry-limit loss", "VO 重傳上限損失", lang),
             L("Queue delay (µs)", "佇列延遲 (µs)", lang), L("Access delay (µs)", "存取延遲 (µs)", lang),
             L("Channel idle", "通道閒置", lang)]
     cx = [0.05, 0.17, 0.35, 0.53, 0.70]
@@ -403,10 +471,14 @@ def page4(pdf, lang, s):
         for cval, x in zip(cells, cx):
             fig.text(x, y, cval, fontsize=9.3, color="#333")
         y -= 0.036
-    read_txt = L("Reading: queue delay is ~90% of MAC delay and drops 16–33%; access delay barely differs "
-                 "(<5%, even slightly higher for 11be on bursty — longer PPDU); idle differs <1 pp; carried throughput equal.",
-                 "解讀：佇列延遲約佔 MAC 延遲 90%、下降 16–33%；存取延遲幾乎不變(<5%，突發流量下 11be 甚至略高 — PPDU 較長)；"
-                 "閒置差 <1 pp；承載吞吐量相同。", lang)
+    read_txt = L(f"Reading: queue delay dominates MAC delay and rises {min(queue_delta):.0f}–{max(queue_delta):.0f}%; "
+                 f"access delay rises {min(access_delta):.0f}–{max(access_delta):.0f}% (longer PPDU + response timing); "
+                 f"idle even rises 1.4–2.0 pp — the channel is not busier, it is less efficient per access; "
+                 f"retry-limit loss is slightly LOWER on 11be, ruling out a collision-rate explanation.",
+                 f"解讀：佇列延遲主導 MAC 延遲、上升 {min(queue_delta):.0f}–{max(queue_delta):.0f}%；"
+                 f"存取延遲上升 {min(access_delta):.0f}–{max(access_delta):.0f}%(PPDU 較長＋回應時序)；"
+                 f"閒置甚至上升 1.4–2.0 pp — 通道並沒有更忙，而是每次存取的效率更差；"
+                 f"11be 的重傳上限損失還略低，排除「碰撞變多」的解釋。", lang)
     yr = y - 0.004
     for ln in wrap_lines(read_txt, 100, lang):     # width-capped so it stays left of the sidebar
         fig.text(0.045, yr, ln, fontsize=8, color=FAINT, va="top")
@@ -416,16 +488,18 @@ def page4(pdf, lang, s):
     sx = 0.80
     fig.text(sx, 0.545, L("Why each pattern appears", "各現象成因", lang), fontsize=11, fontweight="bold", color=INK)
     items = [
-        (L("No gain at light P-EDCA load", "輕 P-EDCA 負載無增益", lang),
-         L("Priority channel uncongested; P-EDCA subset tail is arrival-driven, so the faster PHY "
-           "does not help — and for bursty traffic 11be even trails.",
-           "優先通道不擁塞；P-EDCA 子集尾端由到達過程主導，較快 PHY 幫不上 — 突發流量下 11be 甚至落後。", lang)),
-        (L("Smaller gain when bursty", "越突發增益越小", lang),
-         L("Burst peaks far exceed the service rate; queueing is arrival-driven, the margin only "
-           "shortens the drain time.", "突發峰值遠超服務率；排隊由到達過程主導，餘裕只縮短排空時間。", lang)),
-        (L("Largest gap at n=30", "n=30 差距最大", lang),
-         L("DS-CTS adds one 6 Mbps exchange per access; 11n adds it past the knee (blow-up); 11be absorbs it.",
-           "DS-CTS 每次存取多一次 6 Mbps 交握；11n 加在膝點之後(爆掉)，11be 吸收得了。", lang)),
+        (L("P-EDCA flips the ranking at n=30", "n=30 時 P-EDCA 翻轉排名", lang),
+         L("DS-CTS ordering replaces CWmin=3 collision contention — exactly the dead time 11be "
+           "loses; 11n's healthier baseline leaves little to reclaim.",
+           "DS-CTS 排序取代 CWmin=3 的碰撞競爭 — 正是 11be 損失的死時間；11n 基準較健康、可回收的少。", lang)),
+        (L("Partial penetration favors 11n", "部分滲透時 11n 佔優", lang),
+         L("The P-EDCA subset rides on the surrounding system: 11be's congested baseline drags "
+           "its subset tail even with priority access.",
+           "P-EDCA 子集騎在整體系統上：11be 壅塞的基準拖累子集尾端，即使有優先存取。", lang)),
+        (L("Burstier traffic widens the gap", "越突發差距越大", lang),
+         L("Bursts drain in small PPDUs; each PPDU pays the fixed EHT preamble tax, so the "
+           "efficiency deficit grows (−12% CBR → −18% OnOff).",
+           "突發以小 PPDU 排空；每個 PPDU 都付固定 preamble 稅，效率劣勢隨之擴大(CBR −12% → OnOff −18%)。", lang)),
     ]
     yy = 0.505
     for head, body in items:
@@ -435,16 +509,15 @@ def page4(pdf, lang, s):
             fig.text(sx, yy, ln, fontsize=7.8, color=MUTED)
             yy -= 0.0215
         yy -= 0.020
-
     fig.text(0.045, 0.155, L("Open items (suggested follow-ups)", "待辦(建議後續)", lang),
              fontsize=11.5, fontweight="bold", color=INK)
-    open_txt = L("Whether the ~12% service margin alone explains the fixed-point gap, or ns-3's HT vs EHT "
-                 "frame-exchange / receive paths (post-collision EIFS behavior; this repo's v6–v6.3 changes) also "
-                 "contribute: (1) count PhyRxDrop / collision events per standard; (2) rate-sensitivity run with 11be "
-                 "GI = 0.8 µs (86 Mbps) to separate rate effects from code-path effects.",
-                 "究竟 ~12% 服務餘裕本身是否足以解釋固定點差距，或 ns-3 的 HT vs EHT 幀交換／接收路徑(碰撞後 EIFS 行為；"
-                 "本 repo v6–v6.3 的修改)也有貢獻：(1) 依標準統計 PhyRxDrop／碰撞事件；(2) 以 11be GI = 0.8 µs(86 Mbps)做"
-                 "速率敏感度實驗，區分速率效應與程式路徑效應。", lang)
+    open_txt = L("(1) Re-run the 11n sweep on current v6.3.2 code — the 11n data predates the v6.3.x P-EDCA/NAV fixes. "
+                 "(2) Decompose the per-PPDU tax vs EHT code-path effects: count PhyRxDrop / collisions per standard; "
+                 "re-run 11be at GI 0.8 µs (68.8 Mbps). (3) Log the A-MPDU size distribution to confirm the "
+                 "small-PPDU hypothesis behind the +10~20% busy-time per MPDU.",
+                 "(1) 用現行 v6.3.2 程式重跑 11n 掃描 — 11n 資料早於 v6.3.x 的 P-EDCA/NAV 修正。"
+                 "(2) 拆解每 PPDU 固定稅與 EHT 程式路徑效應：依標準統計 PhyRxDrop／碰撞事件；以 GI 0.8 µs(68.8 Mbps)重跑 11be。"
+                 "(3) 記錄 A-MPDU 大小分布，驗證「小 PPDU」假說是否足以解釋 +10~20% 的每 MPDU 忙碌空時。", lang)
     yo = 0.115
     for ln in wrap_lines(open_txt, 135, lang):
         fig.text(0.045, yo, ln, fontsize=8.3, color="#444", va="top")

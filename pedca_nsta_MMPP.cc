@@ -326,6 +326,9 @@ int main(int argc, char* argv[])
   uint32_t payloadSize = 1000;
   bool enableRts = true;
   bool enableAggregation = true;
+  uint32_t baBufferSize = 64;    // Block Ack window size, in MPDUs
+  uint32_t maxAmpduSize = 65535; // Maximum A-MPDU size, in bytes
+  uint32_t maxAmsduSize = 7935;  // Maximum A-MSDU size, in bytes
   bool verbose = false;
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
@@ -344,6 +347,9 @@ int main(int argc, char* argv[])
   cmd.AddValue("dataRate","Data rate (e.g., 0.5Mbps)", dataRate);
   cmd.AddValue("verbose","Enable logging", verbose);
   cmd.AddValue("enableAggregation","Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
+  cmd.AddValue("baBufferSize","Block Ack buffer/window size in MPDUs", baBufferSize);
+  cmd.AddValue("maxAmpduSize","Maximum A-MPDU size in bytes when aggregation is enabled", maxAmpduSize);
+  cmd.AddValue("maxAmsduSize","Maximum A-MSDU size in bytes when aggregation is enabled", maxAmsduSize);
   cmd.AddValue("voicePdfBinUs","VO delay PDF bin width (microseconds)", voicePdfBinUs);
   cmd.AddValue("voicePdfOutput","Output CSV file for VO delay PDF", voicePdfOutput);
   cmd.AddValue("pedcaStaDelayOutput","CSV for P-EDCA STA delay PDF", pedcaStaDelayOutput);
@@ -404,18 +410,18 @@ int main(int argc, char* argv[])
   
   // Queue size: 400 packets
   Config::SetDefault("ns3::WifiMacQueue::MaxSize", StringValue("10000p"));
+  Config::SetDefault("ns3::WifiMac::MpduBufferSize", UintegerValue(baBufferSize));
 
-  // Aggregation control. Disabled by default to preserve legacy verification behavior.
-  const uint32_t maxAmpduSize = enableAggregation ? 65535 : 0;
-  const uint32_t maxAmsduSize = enableAggregation ? 7935 : 0;
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(maxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(maxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(maxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(maxAmpduSize));
-  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(maxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(maxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(maxAmsduSize));
-  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(maxAmsduSize));
+  const uint32_t effectiveMaxAmpduSize = enableAggregation ? maxAmpduSize : 0;
+  const uint32_t effectiveMaxAmsduSize = enableAggregation ? maxAmsduSize : 0;
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmpduSize", UintegerValue(effectiveMaxAmpduSize));
+  Config::SetDefault("ns3::WifiMac::VO_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::VI_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
+  Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
   
   Ssid ssid = Ssid("wifi-backoff-vo");
 

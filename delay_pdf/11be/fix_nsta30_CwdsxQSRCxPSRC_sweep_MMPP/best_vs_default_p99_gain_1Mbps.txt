@@ -1,19 +1,19 @@
 ====================================================================================================
   P99 Delay: Min-P99 combo vs Default (CWds=0,QSRC=2,PSRC=1) vs EDCA-only
   nSta=30  dataRate=1Mbps  10 runs averaged
-  EDCA-only baseline P99 = 20322 µs
+  EDCA-only baseline P99 = 46592 µs
 ====================================================================================================
 
   STA Type     nPedca  Best Params      Min P99 Default P99  EDCA P99  Gain vs Def  Gain vs EDCA
   ----------------------------------------------------------------------------------------------
-  All STAs          5  c0·q2·s3           19498       20692     20322        +5.8%         +4.1%
-  All STAs         15  c0·q0·s1           19178       20922     20322        +8.3%         +5.6%
-  All STAs         30  c0·q0·s3            9918       25228     20322       +60.7%        +51.2%
-  P-EDCA STAs       5  c1·q0·s3            9962       21182     20322       +53.0%        +51.0%
-  P-EDCA STAs      15  c1·q0·s3           13108       22352     20322       +41.4%        +35.5%
-  P-EDCA STAs      30  c0·q0·s3           11132       25322     20322       +56.0%        +45.2%
-  Legacy STAs       5  c1·q4·s3           19522       20672     20322        +5.6%         +3.9%
-  Legacy STAs      15  c0·q0·s1           19978       20228     20322        +1.2%         +1.7%
+  All STAs          5  c1·q0·s3           43268       47018     46592        +8.0%         +7.1%
+  All STAs         15  c1·q0·s3           34182       49182     46592       +30.5%        +26.6%
+  All STAs         30  c0·q0·s3           10822       49178     46592       +78.0%        +76.8%
+  P-EDCA STAs       5  c0·q0·s3           27382       48182     46592       +43.2%        +41.2%
+  P-EDCA STAs      15  c0·q0·s3           30272       50082     46592       +39.6%        +35.0%
+  P-EDCA STAs      30  c0·q0·s3           11568       49322     46592       +76.5%        +75.2%
+  Legacy STAs       5  c1·q0·s3           44292       46992     46592        +5.7%         +4.9%
+  Legacy STAs      15  c0·q0·s3           36022       48602     46592       +25.9%        +22.7%
 
   Gain = (reference_P99 - min_P99) / reference_P99 × 100  (positive = min combo is better)
   Note: 'gain vs Def' positive means the min-P99 combo beats the default parameter set.

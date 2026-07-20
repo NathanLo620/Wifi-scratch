@@ -86,8 +86,8 @@ def wrap_lines(t, w, lang):
         ww = max(6, w // 2); return [t[i:i + ww] for i in range(0, len(t), ww)]
     return textwrap.wrap(t, width=w)
 def footer(fig, page, lang):
-    fig.text(0.045, 0.035, L("ns-3.45 P-EDCA light-load sweep | scratch/delay_pdf/11be | 2026-07-13",
-                             "ns-3.45 P-EDCA 輕載掃描 | scratch/delay_pdf/11be | 2026-07-13", lang),
+    fig.text(0.045, 0.035, L("ns-3.45 P-EDCA light-load sweep | scratch/delay_pdf/11be | re-run on v6.3.2, 2026-07-19",
+                             "ns-3.45 P-EDCA 輕載掃描 | scratch/delay_pdf/11be | v6.3.2 重跑，2026-07-19", lang),
              fontsize=7.5, color=FAINT, va="center")
     fig.text(0.955, 0.035, f"{page} / 3", fontsize=7.5, color=FAINT, va="center", ha="right")
 def title_block(fig, t, s):
@@ -133,31 +133,32 @@ def page1(pdf, lang):
 
     card(fig, 0.60, 0.66, 0.35, 0.15,
          L("0.1 Mbps: ≈ no-op", "0.1 Mbps：形同無作用", lang),
-         L("P-EDCA cuts P99 only +5–6%", "P-EDCA 只降 P99 +5–6%", lang),
-         L(f"best {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — any combo works",
-           f"最佳 {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — 任何組合皆可", lang), bc=GREEN)
+         L("P-EDCA cuts P99 only +5–7%", "P-EDCA 只降 P99 +5–7%", lang),
+         L(f"best {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — any combo works (q0 even slightly worst)",
+           f"最佳 {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — 任何組合皆可(q0 反而略差)", lang), bc=GREEN)
     card(fig, 0.60, 0.475, 0.35, 0.15,
          L("0.5 Mbps: sweet spot", "0.5 Mbps：甜蜜點", lang),
          L(f"+{gain('0.5',30):.0f}% P99 ({EDCA['0.5']:.1f} → {D['0.5'][30]['P99']:.1f} ms)",
            f"+{gain('0.5',30):.0f}% P99({EDCA['0.5']:.1f} → {D['0.5'][30]['P99']:.1f} ms)", lang),
-         L("QSRC=0, PSRC=3 — aggressive & safe (no tail risk)",
-           "QSRC=0、PSRC=3 — 積極且安全(無尾端風險)", lang), bc=GREEN)
+         L(f"QSRC=0, PSRC=3 — monotonic; worst combo ≤ {max(D['0.5'][n]['worst'] for n in NPEDCAS):.0f} ms",
+           f"QSRC=0、PSRC=3 — 單調；最差組合 ≤ {max(D['0.5'][n]['worst'] for n in NPEDCAS):.0f} ms", lang), bc=GREEN)
     card(fig, 0.60, 0.29, 0.35, 0.15,
-         L("Best light-load recipe", "輕載最佳配方", lang),
+         L("One recipe at every load", "各負載同一配方", lang),
          L("QSRC = 0,  PSRC = 3,  CWds = 0/1", "QSRC = 0、PSRC = 3、CWds = 0/1", lang),
-         L("saturated backs QSRC off to 1 (n=5 tail risk)", "飽和時 QSRC 退回 1(n=5 尾端風險)", lang), bs=18)
+         L("now wins at saturation too — the old n=5 tail blow-up is gone (v6.3.x fixes)",
+           "飽和時同樣勝出 — 舊的 n=5 尾端爆炸已消失(v6.3.x 修正)", lang), bs=18)
 
     ax = fig.add_axes([0.045, 0.10, 0.52, 0.15]); ax.axis("off")
     ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.03",
                  fc="#FAFAF9", ec=CARDBD, lw=1, transform=ax.transAxes))
     ax.text(0.04, 0.80, L("One-line takeaway", "一句話結論", lang), fontsize=11, fontweight="bold",
             color=INK, transform=ax.transAxes)
-    ax.text(0.04, 0.40, L("P-EDCA's value tracks how congested EDCA already is: near-zero at 0.1 Mbps,\n"
-                          "largest at 0.5 Mbps (+60%+), and still large but riskier at saturation. The\n"
-                          "aggressive recipe (QSRC 0, PSRC 3) wins whenever there is real load to drain.",
-                          "P-EDCA 的價值取決於 EDCA 本身有多壅塞：0.1 Mbps 幾乎為零、\n"
-                          "0.5 Mbps 最大(+60%↑)、飽和時仍大但風險較高。只要有實質負載可排空，\n"
-                          "積極配方(QSRC 0、PSRC 3)就勝出。", lang),
+    ax.text(0.04, 0.40, L(f"P-EDCA's value tracks how congested EDCA already is: near-zero at 0.1 Mbps,\n"
+                          f"+{gain('0.5',30):.0f}% at 0.5 Mbps and +{gain('1.0',30):.0f}% at saturation (n=30). The aggressive\n"
+                          f"recipe (QSRC 0, PSRC 3) wins at every load with real queueing — no tail risk left.",
+                          f"P-EDCA 的價值取決於 EDCA 本身有多壅塞：0.1 Mbps 幾乎為零、\n"
+                          f"0.5 Mbps +{gain('0.5',30):.0f}%、飽和 +{gain('1.0',30):.0f}%(n=30)。只要有實質排隊，\n"
+                          f"積極配方(QSRC 0、PSRC 3)在每種負載都勝出 — 尾端風險已不存在。", lang),
             fontsize=9.4, color="#333", va="center", linespacing=1.5, transform=ax.transAxes)
     footer(fig, 1, lang); pdf.savefig(fig); plt.close(fig)
 
@@ -207,18 +208,22 @@ def page2(pdf, lang):
         y -= 0.010
 
     bullets = [
-        L(f"Relative gain peaks at moderate load: +5–6% at 0.1 Mbps → +{gain('0.5',30):.0f}% at 0.5 Mbps → "
-          f"+{gain('1.0',30):.0f}% at saturation. P-EDCA only helps once EDCA itself is congested.",
-          f"相對增益在中等負載達峰：0.1 Mbps 僅 +5–6% → 0.5 Mbps +{gain('0.5',30):.0f}% → "
-          f"飽和 +{gain('1.0',30):.0f}%。EDCA 本身壅塞後 P-EDCA 才有用。", lang),
+        L(f"Relative gain grows with congestion: +5–7% at 0.1 Mbps → +{gain('0.5',30):.0f}% at 0.5 Mbps → "
+          f"+{gain('1.0',30):.0f}% at saturation (n=30). P-EDCA only helps once EDCA itself is congested.",
+          f"相對增益隨壅塞增加：0.1 Mbps 僅 +5–7% → 0.5 Mbps +{gain('0.5',30):.0f}% → "
+          f"飽和 +{gain('1.0',30):.0f}%(n=30)。EDCA 本身壅塞後 P-EDCA 才有用。", lang),
         L(f"At 0.1 Mbps the best P99 ({D['0.1'][30]['P99']:.2f} ms) barely beats EDCA ({EDCA['0.1']:.2f} ms) and the "
-          f"winning combo is inconsistent across nPedca (c0q2s2 / c0q5s1 / c1q1s1) — a sign params don't matter.",
+          f"winning combo drifts across nPedca ({D['0.1'][5]['combo']} / {D['0.1'][15]['combo']} / {D['0.1'][30]['combo']}) "
+          f"— a sign params don't matter when uncongested.",
           f"0.1 Mbps 下最佳 P99({D['0.1'][30]['P99']:.2f} ms)幾乎追平 EDCA({EDCA['0.1']:.2f} ms)，"
-          f"且最佳組合隨 nPedca 飄移(c0q2s2 / c0q5s1 / c1q1s1)— 代表參數不重要。", lang),
-        L("At 0.5 & 1.0 Mbps the winner is consistently aggressive (QSRC 0–1, PSRC 3); the gain is stable "
-          "across nPedca (5→30), i.e. it does not collapse as P-EDCA penetration rises.",
-          "0.5 與 1.0 Mbps 下最佳者一致偏積極(QSRC 0–1、PSRC 3)；增益在 nPedca(5→30)間穩定，"
-          "不會隨 P-EDCA 滲透上升而崩解。", lang),
+          f"且最佳組合隨 nPedca 飄移({D['0.1'][5]['combo']} / {D['0.1'][15]['combo']} / {D['0.1'][30]['combo']})— "
+          f"代表未壅塞時參數不重要。", lang),
+        L(f"At 0.5 & 1.0 Mbps the winner is consistently aggressive (QSRC 0–1, PSRC 3), and the gain RISES with "
+          f"penetration: 0.5 Mbps +{gain('0.5',5):.0f}% → +{gain('0.5',15):.0f}% → +{gain('0.5',30):.0f}%; "
+          f"saturation +{gain('1.0',5):.0f}% / +{gain('1.0',15):.0f}% / +{gain('1.0',30):.0f}% (n=5/15/30).",
+          f"0.5 與 1.0 Mbps 下最佳者一致偏積極(QSRC 0–1、PSRC 3)，且增益隨滲透率上升：0.5 Mbps "
+          f"+{gain('0.5',5):.0f}% → +{gain('0.5',15):.0f}% → +{gain('0.5',30):.0f}%；"
+          f"飽和 +{gain('1.0',5):.0f}% / +{gain('1.0',15):.0f}% / +{gain('1.0',30):.0f}%(n=5/15/30)。", lang),
     ]
     y = 0.315
     for b in bullets:
@@ -232,8 +237,8 @@ def page2(pdf, lang):
 def page3(pdf, lang):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Which knob matters at which load — and the saturation tail-risk",
-          "哪個旋鈕在哪種負載重要 — 以及飽和的尾端風險", lang),
+        L("Which knob matters at which load — and where the old tail-risk went",
+          "哪個旋鈕在哪種負載重要 — 以及舊的尾端風險去哪了", lang),
         L("Marginal mean P99 (P-EDCA STAs, n=30) vs QSRC and vs PSRC, per load",
           "各負載下邊際平均 P99(P-EDCA STA，n=30)對 QSRC 及 PSRC 的關係", lang))
 
@@ -250,42 +255,49 @@ def page3(pdf, lang):
         ax.set_xticks(list(D["0.5"][30][key].keys()))
         ax.spines[["top", "right"]].set_visible(False); ax.grid(alpha=0.25); ax.tick_params(labelsize=8)
 
-    # tail-risk callout
+    # worst-case callout (the old blow-up no longer reproduces)
     ax = fig.add_axes([0.70, 0.44, 0.26, 0.36]); ax.axis("off")
     ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.04",
-                 fc="#FCF3F2", ec="#E7C6C2", lw=1, transform=ax.transAxes))
-    ax.text(0.5, 0.90, L("Saturation tail-risk", "飽和尾端風險", lang), ha="center", fontsize=11.5,
-            fontweight="bold", color=RED, transform=ax.transAxes)
+                 fc="#F1F7F1", ec="#C6DEC6", lw=1, transform=ax.transAxes))
+    ax.text(0.5, 0.90, L("Tail blow-up: gone", "尾端爆炸：已消失", lang), ha="center", fontsize=11.5,
+            fontweight="bold", color=GREEN, transform=ax.transAxes)
     w05 = max(D["0.5"][n]["worst"] for n in NPEDCAS)
-    ax.text(0.5, 0.60, L("worst-case P99 over 36 combos", "36 組合中最差 P99", lang),
+    w10 = max(D["1.0"][n]["worst"] for n in NPEDCAS)
+    ax.text(0.5, 0.62, L("worst-case P99 over 36 combos", "36 組合中最差 P99", lang),
             ha="center", fontsize=9, color=INK, transform=ax.transAxes)
-    ax.text(0.5, 0.45, f"0.1: {max(D['0.1'][n]['worst'] for n in NPEDCAS):.1f} ms   "
-                       f"0.5: {w05:.1f} ms", ha="center", fontsize=9.5, color=INK, transform=ax.transAxes)
-    ax.text(0.5, 0.30, L(f"1.0 (sat), n=5:  {D['1.0'][5]['worst']:.0f} ms",
-                         f"1.0(飽和)，n=5：{D['1.0'][5]['worst']:.0f} ms", lang),
-            ha="center", fontsize=11, fontweight="bold", color=RED, transform=ax.transAxes)
-    ax.text(0.5, 0.12, L("aggressive QSRC0+PSRC3 explodes only\nat saturation + low penetration",
-                         "積極的 QSRC0+PSRC3 只在\n飽和且低滲透時爆掉", lang),
+    ax.text(0.5, 0.47, f"0.1: {max(D['0.1'][n]['worst'] for n in NPEDCAS):.1f} ms   "
+                       f"0.5: {w05:.0f} ms   1.0: {w10:.0f} ms", ha="center", fontsize=9.5, color=INK,
+            transform=ax.transAxes)
+    ax.text(0.5, 0.30, L("worst ≈ EDCA-only baseline\n(= no benefit, never a blow-up)",
+                         "最差 ≈ 純 EDCA 基準\n(= 沒有好處，但不會爆掉)", lang),
+            ha="center", fontsize=9.5, fontweight="bold", color=INK, transform=ax.transAxes)
+    ax.text(0.5, 0.10, L("the pre-v6.3 294 ms n=5 blow-up no longer\nreproduces after the NAV/FEM fixes",
+                         "v6.3 之前的 294 ms(n=5)爆炸\n在 NAV/FEM 修正後不再重現", lang),
             ha="center", fontsize=8, color=MUTED, transform=ax.transAxes)
 
     bullets = [
-        L(f"QSRC: at 0.1 Mbps flat/slightly falling (higher QSRC marginally better — do not trigger P-EDCA "
-          f"when uncongested); at 0.5 Mbps strongly monotonic (q0 best, {D['0.5'][30]['byQ'][0]:.1f} ms vs "
-          f"{D['0.5'][30]['byQ'][5]:.1f} ms at q5); at 1.0 Mbps noisy/non-monotonic.",
-          f"QSRC：0.1 Mbps 幾乎持平甚至略降(QSRC 大一點反而好 — 未壅塞時別觸發 P-EDCA)；"
-          f"0.5 Mbps 強烈單調(q0 最佳，{D['0.5'][30]['byQ'][0]:.1f} ms vs q5 {D['0.5'][30]['byQ'][5]:.1f} ms)；"
-          f"1.0 Mbps 雜訊、非單調。", lang),
+        L(f"QSRC: at 0.1 Mbps a shallow reverse-U (q0 is mildly the WORST, {D['0.1'][30]['byQ'][0]:.1f} vs "
+          f"{D['0.1'][30]['byQ'][2]:.1f} ms at q2 — don't trigger P-EDCA when uncongested); at 0.5 Mbps strongly "
+          f"monotonic (q0 {D['0.5'][30]['byQ'][0]:.1f} ms vs q5 {D['0.5'][30]['byQ'][5]:.1f} ms); at 1.0 Mbps "
+          f"now ALSO monotonic (q0 {D['1.0'][30]['byQ'][0]:.1f} ms vs q5 {D['1.0'][30]['byQ'][5]:.1f} ms).",
+          f"QSRC：0.1 Mbps 呈淺淺的倒 U(q0 反而最差，{D['0.1'][30]['byQ'][0]:.1f} vs q2 {D['0.1'][30]['byQ'][2]:.1f} ms — "
+          f"未壅塞時別觸發 P-EDCA)；0.5 Mbps 強烈單調(q0 {D['0.5'][30]['byQ'][0]:.1f} ms vs q5 "
+          f"{D['0.5'][30]['byQ'][5]:.1f} ms)；1.0 Mbps 現在也單調(q0 {D['1.0'][30]['byQ'][0]:.1f} ms vs q5 "
+          f"{D['1.0'][30]['byQ'][5]:.1f} ms)。", lang),
         L(f"PSRC: irrelevant at 0.1 Mbps; clearly larger-is-better at 0.5 Mbps "
-          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms); at saturation "
-          f"PSRC=3 helps on average but is the trigger for the n=5 tail blow-up.",
+          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms) and at saturation "
+          f"(s3 {D['1.0'][30]['byS'][3]:.1f} ms vs s1 {D['1.0'][30]['byS'][1]:.1f} ms) — with the v6.3.x fixes "
+          f"PSRC=3 no longer carries any blow-up risk.",
           f"PSRC：0.1 Mbps 無關緊要；0.5 Mbps 明顯越大越好"
-          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms)；"
-          f"飽和時 PSRC=3 平均有利，卻是 n=5 尾端爆掉的觸發因子。", lang),
-        L(f"Robust recommendation — light/moderate (0.1–0.5 Mbps): QSRC=0, PSRC=3, CWds=0/1 (safe, "
-          f"worst-case ≤ {w05:.0f} ms). Saturated (1.0 Mbps): back QSRC off to 1 to avoid the "
-          f"{D['1.0'][5]['worst']:.0f} ms low-penetration tail.",
-          f"穩健建議 — 輕/中載(0.1–0.5 Mbps)：QSRC=0、PSRC=3、CWds=0/1(安全，最差 ≤ {w05:.0f} ms)。"
-          f"飽和(1.0 Mbps)：QSRC 退回 1，避免 {D['1.0'][5]['worst']:.0f} ms 的低滲透尾端。", lang),
+          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms)，"
+          f"飽和亦然(s3 {D['1.0'][30]['byS'][3]:.1f} ms vs s1 {D['1.0'][30]['byS'][1]:.1f} ms) — "
+          f"v6.3.x 修正後 PSRC=3 不再有爆炸風險。", lang),
+        L(f"Robust recommendation — one recipe at every load with real queueing: QSRC=0, PSRC=3, CWds=0/1 "
+          f"(worst-case ≤ {w05:.0f} ms at 0.5 Mbps, ≤ {w10:.0f} ms at saturation ≈ the EDCA-only baseline). "
+          f"At 0.1 Mbps simply leave P-EDCA untriggered (large QSRC) — there is nothing to gain.",
+          f"穩健建議 — 只要有實質排隊，各負載同一配方：QSRC=0、PSRC=3、CWds=0/1"
+          f"(最差 ≤ {w05:.0f} ms @0.5 Mbps、≤ {w10:.0f} ms @飽和 ≈ 純 EDCA 基準)。"
+          f"0.1 Mbps 則讓 P-EDCA 不觸發(大 QSRC)即可 — 沒有可得的增益。", lang),
     ]
     y = 0.335
     for b in bullets:

@@ -1,6 +1,11 @@
 # Implementing P-EDCA in ns-3.45 — Current State
-**Last Updated:** 2026-05-09
-**Status:** 2026-05-09 — Added per-DS-CTS attempt logging, partitioned delay metrics, AP-side DS-CTS NAV exemption (inert under HtMcs0 RTS), and backoff-vs-failure analysis pipeline. Earlier 2026-04-26 coexistence fixes still in place.
+**Last Updated:** 2026-07-20
+**Status:** EHT uses the ns-3.45 RTS/CTS/ACK/BlockAck and dual-NAV baseline, with internal NAV/CAM synchronization and the QoS-only P-EDCA Stage-2 RTS exception.
+
+> **Authoritative implementation note (2026-07-20):** Section 1.1 describes the current EHT
+> implementation. The PHY fallback NAV, forced EIFS-on-preamble-drop, ACK/BlockAck suppression,
+> and generic RTS NAV bypass described later in historical sections have been removed. Do not
+> reintroduce them without a new controlled experiment.
 
 ---
 
@@ -11,6 +16,106 @@ P-EDCA (Prioritized EDCA) is a two-stage channel access mechanism specified in t
 - [cite_start]**Stage 1:** Send a DS-CTS (Defer Signal CTS) initiated by EDCAF[AC_VO] [cite: 36, 40] [cite_start]to reserve a 77µs protected contention duration for the 5/6GHz band[cite: 141, 189].
 - [cite_start]**Stage 2:** Contend with reduced parameters (CW=7, AIFSN=2) during the reserved window, while other EDCAFs are suspended with their states (Backoff, CWmin, CWmax, and QSRC) remaining unchanged[cite: 254].
 
+### 1.1 Current EHT/802.11be implementation (authoritative)
+
+The EHT implementation was re-audited against the official ns-3.45 sources on 2026-07-20. The
+large EDCA delay gap previously observed between HT and EHT was caused by local NAV/PHY changes,
+not by a separate EHT RTS/CTS algorithm.
+
+#### Common RTS/CTS path
+
+- Normal RTS transmission, CTS response, CTS timeout, ACK, and BlockAck use the official ns-3.45
+  `FrameExchangeManager`, `QosFrameExchangeManager`, and `HtFrameExchangeManager` behavior.
+- RTS and CTS use non-HT OFDM 6 Mbps in the verification scripts.
+- Removed local behavior that suppressed ACK or BlockAck while a DS-CTS-derived NAV was active.
+- Removed the generic `FrameExchangeManager` DS-CTS NAV bypass for received RTS frames.
+- The only DS-CTS RTS exception is in the QoS receive path: the AP may answer the P-EDCA Stage-2
+  winner's RTS while the NAV set specifically by DS-CTS is active.
+
+#### DS-CTS and NAV update
+
+- DS-CTS NAV is installed only after the MAC successfully decodes the DS-CTS and calls
+  `FrameExchangeManager::UpdateNav()`.
+- Current code sets the DS-CTS Duration field and `PEDCA_NAV_WINDOW_US` to `79 us`. The draft notes
+  in this document refer to `77 us`; treat 77/79 as an explicit standards-review TODO rather than
+  silently changing one constant.
+- `m_navEndFromDsCts` records that the basic NAV came from the P-EDCA fixed RA
+  `00:0F:AC:47:43:00`. It is used only by the QoS Stage-2 RTS exception.
+- Removed the non-standard PHY-side fallback that inspected a dropped PPDU and directly updated
+  only `ChannelAccessManager`. That path created states where CAM NAV was active but HE/EHT basic
+  and intra-BSS NAV were both zero.
+- Removed the associated custom `WifiPhyListener::NotifyNavStart()` plumbing.
+- Removed the custom forced-EIFS behavior for `BUSY_DECODING_PREAMBLE` and
+  `PREAMBLE_DETECTION_PACKET_SWITCH`; PHY/CAM contention is back to the official ns-3.45 baseline.
+
+#### HE/EHT dual NAV and CF-End
+
+HE/EHT maintains:
+
+```text
+basic NAV      = m_navEnd
+intra-BSS NAV  = m_intraBssNavEnd
+EDCA CAM NAV   = ChannelAccessManager::m_lastNavEnd
+```
+
+The two reset callbacks use the upstream ns-3.45 event semantics: after one NAV expires, CAM is
+updated from `Simulator::GetDelayLeft()` on the other NAV reset event. The internal NAV end is
+updated from the same value so normal EDCA, RTS response logic, and P-EDCA observe one state:
+
+```text
+remaining NAV = GetDelayLeft(other NAV reset event)
+other internal NAV end = now + remaining NAV
+CAM NAV end = now + remaining NAV
+```
+
+CF-End now follows the stock HE/EHT BSS classification and resets only the corresponding basic or
+intra-BSS NAV. There is no single-BSS shortcut that unconditionally clears both NAVs, so an OBSS
+reservation is not discarded merely because a CF-End is received from another BSS.
+
+The dual-NAV reset callbacks synchronize CAM from the remaining internal NAV end time. A runtime
+assertion in `HeFrameExchangeManager::VirtualCsMediumIdle()` requires:
+
+```text
+(basic NAV == 0 && intra-BSS NAV == 0) == (CAM NAV == 0)
+```
+
+`PedcaVirtualCsMediumIdle()` calls this same function. Therefore normal HE/EHT RTS response logic
+and P-EDCA Stage-1 DS-CTS gating cannot maintain independent NAV interpretations.
+
+#### Current EHT validation snapshot
+
+Configuration: 30 STAs, 0.5 Mbps/STA, VO only, RTS enabled, aggregation enabled, EHT MCS6,
+20 MHz, GI=800 ns, data PPDU=170 us, `RngRun=1`. All delays below are MAC delay
+(`enqueue -> ACK/BlockAck`), not application delay.
+
+| Mode | MAC P50 | MAC P95 | MAC P99 | MAC loss | CTS timeout |
+|---|---:|---:|---:|---:|---:|
+| HT MCS7 EDCA, 168 us PPDU | 0.687 ms | 3.108 ms | 4.157 ms | 0.053% | 27.31% |
+| EHT MCS6 EDCA, 170 us PPDU | 0.702 ms | 3.275 ms | 4.505 ms | 0.096% | 28.50% |
+| EHT, 5 P-EDCA STAs | 0.695 ms | 1.983 ms | 3.774 ms | 0% | see run total |
+| EHT, 25 legacy STAs in same run | 0.708 ms | 3.313 ms | 4.528 ms | 0.090% | see run total |
+
+The EHT EDCA MAC P99 is now close to HT when PPDU airtime is matched. This is the expected baseline
+for future comparisons.
+
+#### PHY error-rate interpretation for the snapshot
+
+For EHT MCS6 data frames, the measured AP data PHY PER was:
+
+```text
+0 data PHY drops / 9364 uplink data PPDUs = 0%
+```
+
+The AP recorded 3732 PHY drops, but every one was an RTS:
+
+```text
+(1384 + 2193 + 155) AP RTS PHY drops / 13096 uplink RTS attempts = 28.50%
+```
+
+RTS uses non-HT OFDM 6 Mbps, so 28.50% is the collision/decode-failure ratio for RTS under 30-STA
+contention, not the EHT MCS6 data PER. MCS does not have one fixed PHY error rate; PER depends on
+SNR, interference, payload length, and the configured error model.
+
 ---
 
 ## 2. Modified Files Summary
@@ -20,11 +125,12 @@ P-EDCA (Prioritized EDCA) is a two-stage channel access mechanism specified in t
 | `src/wifi/model/qos-frame-exchange-manager.{h,cc}` | **Core P-EDCA logic**: trigger, DS-CTS TX, Stage 2 transition, parameter override, collision recovery |
 | `src/wifi/model/wifi-mac.{h,cc}` | `PedcaSupported` attribute (bool, default=false) |
 | `src/wifi/model/qos-txop.{h,cc}` | `SetPedcaBypassBackoff()` helper for Stage 2 backoff |
-| `src/wifi/model/frame-exchange-manager.cc` | NAV update logic (UpdateNav), DS-CTS trace logging |
-| `src/wifi/model/phy-entity.cc` | 2026-04-26: DS-CTS fallback NAV and EIFS notification on additional preamble-drop reasons |
-| `src/wifi/model/wifi-phy-listener.h` | 2026-04-26: added PHY-to-MAC NAV notification hook |
-| `src/wifi/model/wifi-phy-state-helper.{h,cc}` | 2026-04-26: forwards fallback NAV notifications to PHY listeners |
-| `src/wifi/model/channel-access-manager.cc` | 2026-04-26: consumes fallback NAV notifications and updates CAM NAV |
+| `src/wifi/model/frame-exchange-manager.{h,cc}` | Official NAV update plus DS-CTS NAV-origin marker and P-EDCA virtual-CS hook |
+| `src/wifi/model/he/he-frame-exchange-manager.{h,cc}` | HE/EHT dual-NAV gate and reset-event/internal-NAV/CAM synchronization |
+| `src/wifi/model/phy-entity.cc` | Restored to official ns-3.45; no PHY-side DS-CTS fallback NAV |
+| `src/wifi/model/wifi-phy-listener.h` | Restored to official ns-3.45; no custom NAV notification hook |
+| `src/wifi/model/wifi-phy-state-helper.{h,cc}` | Restored to official ns-3.45 |
+| `src/wifi/model/channel-access-manager.{h,cc}` | Restored to official ns-3.45 NAV/EIFS behavior |
 | `scratch/pedca_verification_nsta.cc` | Simulation script for P-EDCA verification |
 | `scratch/pedca_verification_nsta_mod.cc` | **2026-05-09**: extended verification scratch; per-STA-type delay CSVs, extended stats block, per-DS-CTS backoff log, per-PHY TX event log |
 | `scratch/wifi_backoff80211n.cc` | Baseline EDCA simulation for comparison |
@@ -103,7 +209,7 @@ Stage 1 (L301-508):  qsrcOk && psrcOk && retryLimitOk && !m_pedcaPending
   → return false (no data yet)
   ↓
 Stage 2 (L510-574):  m_pedcaPending == true
-  [cite_start]→ Check gap: (Now - m_pedcaCtsTxEnd) ≤ 77µs? [cite: 141, 189]
+  → Check gap: (Now - m_pedcaCtsTxEnd) ≤ 79µs in the current implementation
   → YES: stage2Valid = true, proceed with data TX
   → NO:  TIMING EXPIRED, fallback to normal EDCA
   → Always: restore VO default params (CWmin=3, CWmax=7, AIFSN=2)
@@ -119,7 +225,7 @@ ctsHeader.SetDsNotTo();
 ctsHeader.SetNoMoreFragments();
 ctsHeader.SetNoRetry();
 ctsHeader.SetAddr1(Mac48Address("00:0F:AC:47:43:00"));  // Fixed P-EDCA RA (per spec)
-ctsHeader.SetDuration(MicroSeconds(77));                  [cite_start]// P-EDCA 5/6GHz protected duration [cite: 141, 189]
+ctsHeader.SetDuration(MicroSeconds(79));  // Current implementation; draft notes say 77us
 
 WifiTxVector ctsTxVector;
 ctsTxVector.SetMode(WifiMode("OfdmRate6Mbps"));  // non-HT 6 Mbps (per spec)
@@ -130,7 +236,8 @@ ctsTxVector.SetChannelWidth(20);
 
 **Key specs:**
 - **RA = `00:0F:AC:47:43:00`** — fixed per 802.11bn draft (NOT the STA's own address)
-- [cite_start]**Duration = 77µs** — Reduced from 97µs to allow responder CTS transmission without NAV blocking (5/6GHz band)[cite: 141, 189].
+- **Duration = 79us in current code.** The draft notes cite 77us; this discrepancy is intentionally
+  documented and still requires standards review.
 - **Rate = 6 Mbps** non-HT OFDM (per spec section 3.5)
 - **Airtime ≈ 44µs** (24µs CTS payload + 20µs PHY header)
 
@@ -197,7 +304,7 @@ PHY decode success → Receive() → PostProcessFrame() → UpdateNav()
 if (hdr.GetAddr1() == m_self)  // "00:0F:AC:47:43:00" != m_self → NOT skipped
     return;  // Only CTS-to-Self skips NAV update
 
-[cite_start]// DS-CTS passes through → NAV is updated with 77µs duration ✓ [cite: 141, 189]
+// DS-CTS passes through -> NAV is updated with the current 79us Duration field
 ```
 
 **NAV is correctly set for DS-CTS** because:
@@ -216,7 +323,11 @@ void QosTxop::SetPedcaBypassBackoff(bool bypass, uint8_t linkId)
 }
 ```
 
-### 3.10 2026-04-26 Coexistence Fixes: Stale Stage 2, EIFS, and DS-CTS Fallback NAV
+### 3.10 Historical 2026-04-26 coexistence experiment (partly removed)
+
+> **Historical only:** The stale Stage-2 abort remains relevant. Sections 3.10.2 through 3.10.5
+> describe PHY fallback NAV, forced EIFS, and split CAM/MAC NAV behavior that were removed on
+> 2026-07-20. Use Section 1.1 as the current implementation reference.
 
 This section documents the changes made on 2026-04-26 after mixed P-EDCA/legacy testing with
 `nSta=20`, `pedcaRatio=0.05`, `dataRate=1Mbps`, and `simTime=10s`.
@@ -249,38 +360,43 @@ else:
 This prevents examples such as `gap=1223us`, `gap=2036us`, or larger stale pending attempts from
 being sent as P-EDCA Stage 2 RTS.
 
-#### 3.10.2 Additional EIFS Deferral on Preamble Drop (`phy-entity.cc`)
+#### 3.10.2 REMOVED: Additional EIFS Deferral on Preamble Drop (`phy-entity.cc`)
+
+> Removed on 2026-07-20 to restore the official ns-3.45 PHY/CAM contention path. The text below
+> records the old experiment and does not describe current code.
 
 Before this fix, only `PREAMBLE_DETECT_FAILURE` consistently produced the deferral behavior needed
 after a failed receive. In mixed DS-CTS/legacy RTS collisions, many receivers instead reported:
 - `BUSY_DECODING_PREAMBLE`
 - `PREAMBLE_DETECTION_PACKET_SWITCH`
 
-Those receivers could resume EDCA access too early. The current code calls:
+Those receivers could resume EDCA access too early. The removed experiment called:
 ```cpp
 m_state->NotifyPreambleDetectFailure(ppdu->GetTxVector());
 ```
 for `BUSY_DECODING_PREAMBLE` and `PREAMBLE_DETECTION_PACKET_SWITCH` drops, so the
 `ChannelAccessManager` applies EIFS-style deferral to the next access attempt.
 
-This change is intentionally broader than DS-CTS only: it also affects legacy-only preamble failures.
-That is why EDCA-only or mostly-legacy sweeps can show higher average MAC delay but lower failure
-count.
+That experiment was broader than DS-CTS only and also affected legacy-only preamble failures. Its
+results must not be compared directly with the current official-PHY baseline.
 
-#### 3.10.3 DS-CTS Fallback NAV When DS-CTS Cannot Be Decoded (`phy-entity.cc`)
+#### 3.10.3 REMOVED: DS-CTS Fallback NAV When DS-CTS Cannot Be Decoded (`phy-entity.cc`)
+
+> Removed on 2026-07-20. It updated CAM without updating HE/EHT internal dual NAV and caused an
+> observable NAV disagreement. Current code sets DS-CTS NAV only after successful MAC decode.
 
 Problem observed in logs:
 - AP or legacy STAs can see/collide with a DS-CTS but fail to decode the MPDU.
 - If the MPDU is not decoded, normal `FrameExchangeManager::UpdateNav()` does not run.
 - Therefore AP/legacy STAs may not set the intended 77us DS-CTS NAV.
 
-The current implementation detects a P-EDCA DS-CTS by header contents when the PPDU object is
+The removed implementation detected a P-EDCA DS-CTS by header contents when the PPDU object was
 available:
 ```cpp
 header.IsCts() && header.GetAddr1() == Mac48Address("00:0F:AC:47:43:00")
 ```
 
-For non-`TXING` preamble drops, it forwards a fallback NAV notification through:
+For non-`TXING` preamble drops, it forwarded a fallback NAV notification through:
 ```text
 PhyEntity
   -> WifiPhyStateHelper::NotifyNavStart(duration)
@@ -302,23 +418,26 @@ RX time before calling `NotifyNavStart`.
 The transmitting STA is excluded (`reason == TXING`) because it cannot receive DS-CTS while it is
 transmitting.
 
-#### 3.10.4 AP Virtual Carrier Sense Uses CAM NAV (`frame-exchange-manager.cc`)
+#### 3.10.4 REMOVED: Generic Virtual-CS CAM Cross-Check (`frame-exchange-manager.cc`)
+
+> Removed on 2026-07-20 together with PHY fallback NAV. Normal `FrameExchangeManager` again uses
+> the official MAC NAV. HE/EHT separately asserts that its two internal NAVs agree with CAM.
 
 Fallback NAV is stored in the `ChannelAccessManager`. AP response logic previously checked only the
 `FrameExchangeManager` MAC NAV via `m_navEnd`, so an AP could still respond even while the fallback
 CAM NAV was active.
 
-`FrameExchangeManager::VirtualCsMediumIdle()` now requires both NAV sources to be idle:
+The removed experiment changed `FrameExchangeManager::VirtualCsMediumIdle()` to require both NAV
+sources to be idle:
 ```cpp
 const auto now = Simulator::Now();
 return m_navEnd <= now &&
        (!m_channelAccessManager || m_channelAccessManager->GetNavEnd() <= now);
 ```
 
-This makes AP CTS responses respect fallback DS-CTS NAV even when DS-CTS was not decoded through the
-normal MAC path.
+That behavior no longer exists because the fallback NAV itself was removed.
 
-#### 3.10.5 Verification Snapshot After 2026-04-26 Fixes
+#### 3.10.5 Historical Verification Snapshot After 2026-04-26 Fixes
 
 Command:
 ```bash
@@ -369,7 +488,7 @@ Interpretation:
 - Total average MAC delay can increase because 19 legacy STAs dominate the success population in
   the `1 P-EDCA STA + 19 legacy STA` case.
 
-#### 3.10.6 Remaining Review Questions
+#### 3.10.6 Historical Review Questions
 
 1. The current `200us` stale Stage 2 deadline is an engineering guard, not yet proven against the
    draft text. Review whether the deadline should be derived from a normative timer instead.
@@ -684,7 +803,11 @@ Five Python scripts on the `--backoffLogOutput` and `--txEventLogOutput` CSVs:
 | `analyze_collision_v2.py` | `06_actual_phy_gap_distribution.pdf`, `07_mac_gap_vs_phy_gap.pdf`. Uses actual PHY TX time (from `tx_events_*.csv`) to compute MAC→PHY deferral, not just the MAC-level `gap_us`. |
 | `dump_collision_examples.py` | Human-readable timeline dump (`±200µs`) around N example RTS_COLLISION events. |
 
-### 10.5 AP-side NAV plumbing (`frame-exchange-manager.{h,cc}`, `qos-frame-exchange-manager.cc`, `ht/ht-frame-exchange-manager.cc`)
+### 10.5 Historical AP-side NAV plumbing (superseded on 2026-07-20)
+
+> **Do not implement this section as written.** ACK/BlockAck suppression and the generic RTS
+> bypass were removed. Current code retains only the DS-CTS NAV-origin marker and the QoS/P-EDCA
+> Stage-2 RTS exception described in Section 1.1.
 
 To prepare for "AP must honour DS-CTS NAV" experiments, these AP-side hooks were added. **They are deliberately benign with the current HtMcs0 control mode** (the entire RTS-CTS-DATA-ACK exchange runs past the 77µs NAV window, so the conditions never trigger). They will activate if RTS is shortened (e.g. `OfdmRate24Mbps` → 28µs RTS).
 
@@ -702,12 +825,13 @@ Time m_navEndFromDsCts{0};   // NAV expiry time *if* set by a DS-CTS frame
 if (hdr.IsCts() && hdr.GetAddr1() == Mac48Address("00:0F:AC:47:43:00"))
 {
     m_navEndFromDsCts = navEnd;   // remember this NAV came from a DS-CTS
-    std::clog << "[DS-CTS NAV-SET] STA=" << m_self << " NAV set to "
-              << m_navEnd.GetMicroSeconds() << "us …" << std::endl;
 }
 ```
 
-#### 10.5.3 Suppress AP ACK / BACK during DS-CTS NAV
+#### 10.5.3 REMOVED: Suppress AP ACK / BACK during DS-CTS NAV
+
+> Removed on 2026-07-20. NAV does not suppress required SIFS-bounded ACK or BlockAck responses in
+> the current implementation.
 
 ```cpp
 // FrameExchangeManager::SendNormalAck (early return)
@@ -727,9 +851,13 @@ if (m_navEndFromDsCts > Simulator::Now()) {
 
 Goal: stop the AP from finishing a SIFS-bounded reply for legacy DATA inside the 77µs window.
 
-#### 10.5.4 Allow AP to reply CTS to a Stage-2 RTS even while DS-CTS NAV is active
+#### 10.5.4 Current scope: QoS-only Stage-2 RTS exception
 
-Standard 802.11 says "if NAV is busy, do not respond with CTS". That blocks the AP from CTS-ing the P-EDCA winner's Stage-2 RTS when the AP itself has just set NAV from DS-CTS. Patched both code paths:
+> The generic `FrameExchangeManager` exception shown below was removed. Only the
+> `QosFrameExchangeManager::ReceiveMpdu()` exception remains for the P-EDCA Stage-2 RTS.
+
+The historical experiment patched both code paths. Current code removed the first generic patch and
+keeps only the second QoS/P-EDCA-specific condition:
 
 ```cpp
 // FrameExchangeManager::Receive RTS branch (frame-exchange-manager.cc ~L1521)
@@ -745,7 +873,7 @@ if (hdr.GetAddr2() == m_txopHolder || VirtualCsMediumIdle() || dsCtsNavExempt) {
 }
 ```
 
-#### 10.5.5 Why these are no-ops with HtMcs0 RTS
+#### 10.5.5 Historical HtMcs0 timing experiment
 
 | Slot | gap (µs) | RTS end | CTS start | DS-CTS NAV end |
 |---:|---:|---:|---:|---:|
