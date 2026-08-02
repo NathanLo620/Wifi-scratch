@@ -15,6 +15,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <set>
 #include <iomanip>
 
 using namespace ns3;
@@ -32,14 +33,26 @@ struct DsCtsEvent {
     int ccaBusy = 0;
     int idle = 0;     // Initially idle
     int success = 0;  // Successfully received header
-    
+    std::set<uint32_t> idleNodes; // node IDs that were genuinely idle (no unrelated activity) at TX begin
+
     // Derived metrics
     int idleMiss() const { return std::max(0, idle - success); }
 };
 
 std::vector<DsCtsEvent> g_events;
 // Map timestamp (us) to index in g_events
-std::map<int64_t, std::vector<int>> g_eventMap; 
+std::map<int64_t, std::vector<int>> g_eventMap;
+
+// Exact-timestamp (ns) -> indices into g_events of DS-CTS TXs that began at that instant.
+// Used to identify TRUE collision groups (>=2 simultaneous senders) vs isolated single-sender events.
+std::map<int64_t, std::vector<int>> g_txGroups;
+// Receiver node ID -> list of timestamps (ns) at which it successfully decoded a DS-CTS MAC header.
+std::map<uint32_t, std::vector<int64_t>> g_successByNode;
+// (nodeId, startTimeNs) for EVERY PHY transmission of ANY type (not just DS-CTS) -- used to check
+// whether a bystander's DS-CTS decode failure is explained by some other TX starting mid-flight
+// (either the bystander itself going half-duplex, or a third-party interferer), which would NOT
+// have been visible in the TX-begin-instant snapshot.
+std::vector<std::pair<uint32_t, int64_t>> g_allTxBegins;
 
 // Helper to find relevant events for a reception time
 // We search backwards from 'now' for recent DS-CTS transmissions
@@ -52,30 +65,36 @@ void PhyTxBeginCb(std::string context, Ptr<const Packet> packet, double txPowerW
 {
     WifiMacHeader hdr;
     packet->PeekHeader(hdr);
-    
+
+    uint32_t txNodeId = std::stoi(context.substr(10));
+    g_allTxBegins.push_back({txNodeId, Simulator::Now().GetNanoSeconds()});
+
     // Identify DS-CTS: CTS Control Frame to specific address
     if (hdr.IsCts() && hdr.GetAddr1() == Mac48Address("00:0F:AC:47:43:00")) {
         uint32_t senderId = std::stoi(context.substr(10)); // Extract ID from "/NodeList/X/..."
-        
+
         DsCtsEvent evt;
         evt.timestamp = Simulator::Now();
         evt.senderId = senderId;
-        
+
         // Scan all other PHYs
         for (auto phy : g_phys) {
             uint32_t nid = phy->GetDevice()->GetNode()->GetId();
             if (nid == senderId) continue;
-            
+
             if (phy->IsStateTx()) evt.txBusy++;
             else if (phy->IsStateRx()) evt.rxBusy++;
             else if (phy->IsStateCcaBusy()) evt.ccaBusy++; // Busy but not RXing (interference)
-            else evt.idle++;
+            else { evt.idle++; evt.idleNodes.insert(nid); }
         }
-        
+
         // Store event
         int64_t tUs = evt.timestamp.GetMicroSeconds();
+        int64_t tNs = evt.timestamp.GetNanoSeconds();
         g_events.push_back(evt);
-        g_eventMap[tUs].push_back(g_events.size() - 1);
+        int idx = g_events.size() - 1;
+        g_eventMap[tUs].push_back(idx);
+        g_txGroups[tNs].push_back(idx);
     }
 }
 
@@ -83,9 +102,11 @@ void PhyTxBeginCb(std::string context, Ptr<const Packet> packet, double txPowerW
 void PhyRxMacHeaderEndCb(std::string context, const WifiMacHeader& hdr, const WifiTxVector& txVector, Time psr)
 {
     if (hdr.IsCts() && hdr.GetAddr1() == Mac48Address("00:0F:AC:47:43:00")) {
+        uint32_t receiverId = std::stoi(context.substr(10)); // Extract ID from "/NodeList/X/..."
         // Log meaningful info
-        std::cout << "RX Success at " << Simulator::Now().GetMicroSeconds() << "us\n";
+        std::cout << "RX Success at " << Simulator::Now().GetMicroSeconds() << "us (node " << receiverId << ")\n";
         RecordSuccess(Simulator::Now());
+        g_successByNode[receiverId].push_back(Simulator::Now().GetNanoSeconds());
     }
 }
 
@@ -126,6 +147,10 @@ int main(int argc, char* argv[])
     if (verbose) {
         LogComponentEnable("PedcaDsctAnalysis", LOG_LEVEL_INFO);
     }
+
+    // Required for the PhyRxMacHeaderEnd trace (used below to detect successful
+    // reception of the DS-CTS MAC header) to actually fire; defaults to false.
+    Config::SetDefault("ns3::WifiPhy::NotifyMacHdrRxEnd", BooleanValue(true));
 
     NodeContainer wifiStaNodes;
     wifiStaNodes.Create(nSta);
@@ -276,6 +301,125 @@ int main(int argc, char* argv[])
     std::cout << "  Miss - IDLE (Crash):   " << pMiss << "% (" << totalIdleMiss << ") <- Likely Collision/SINR\n\n";
     
     std::cout << "Avg Receivers per DS-CTS: " << (double)totalSuccess / eventCount << "\n";
+
+    // Verification B: given an ACTUAL collision (>=2 simultaneous DS-CTS senders, still zero
+    // legacy STAs in this topology), can a bystander (AP or STA not itself transmitting DS-CTS
+    // at that instant) still decode ONE of the colliding DS-CTS frames and update its NAV?
+    std::set<uint32_t> allNodeIds;
+    for (auto phy : g_phys) {
+        allNodeIds.insert(phy->GetDevice()->GetNode()->GetId());
+    }
+
+    long collisionGroups = 0, totalBystandersColl = 0, successBystandersColl = 0;
+    long singleGroups = 0, totalBystandersSingle = 0, successBystandersSingle = 0;
+    // Same "busy at other traffic" caveat as Verification A, but tracked per group here:
+    long collisionGroupsBusyBystanders = 0, singleGroupsBusyBystanders = 0;
+    const int64_t kMatchWindowNs = 100000; // 100 us: covers DS-CTS airtime + propagation
+    // (tNs, senderId, failedBystanderNid) for isolated (non-colliding) groups only, feeds Verification C
+    std::vector<std::tuple<int64_t, uint32_t, uint32_t>> g_isolatedFailures;
+
+    for (const auto& [tNs, indices] : g_txGroups) {
+        if (NanoSeconds(tNs) < steadyStateStart) continue;
+
+        std::set<uint32_t> senderSet;
+        std::set<uint32_t> idleNodes; // genuinely idle (no unrelated TX/RX/CCA activity) at this instant
+        for (int idx : indices) {
+            senderSet.insert(g_events[idx].senderId);
+            idleNodes.insert(g_events[idx].idleNodes.begin(), g_events[idx].idleNodes.end());
+        }
+        bool isCollision = senderSet.size() >= 2;
+
+        for (uint32_t nid : allNodeIds) {
+            if (senderSet.count(nid)) continue; // exclude participants in this DS-CTS TX group
+            if (!idleNodes.count(nid)) {
+                // This bystander was itself busy with unrelated traffic (TX/RX/CCA) at TX-begin;
+                // exclude it, otherwise a "decode failure" here just reflects general channel
+                // load, not the DS-CTS collision/reception question being asked.
+                isCollision ? collisionGroupsBusyBystanders++ : singleGroupsBusyBystanders++;
+                continue;
+            }
+
+            bool succeeded = false;
+            auto it = g_successByNode.find(nid);
+            if (it != g_successByNode.end()) {
+                for (int64_t st : it->second) {
+                    if (st >= tNs && st <= tNs + kMatchWindowNs) {
+                        succeeded = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isCollision) {
+                totalBystandersColl++;
+                if (succeeded) successBystandersColl++;
+            } else {
+                totalBystandersSingle++;
+                if (succeeded) successBystandersSingle++;
+                if (!succeeded) {
+                    g_isolatedFailures.push_back({tNs, *senderSet.begin(), nid});
+                }
+            }
+        }
+        isCollision ? collisionGroups++ : singleGroups++;
+    }
+
+    std::cout << "\n=== Verification B: Bystander decode outcome, split by collision vs isolated ===\n";
+    std::cout << "(bystanders busy with unrelated TX/RX/CCA at that instant are excluded from the\n";
+    std::cout << " denominator below -- only genuinely idle bystanders are counted)\n";
+    std::cout << "Collision groups (>=2 simultaneous DS-CTS senders, 0 legacy STAs present): "
+              << collisionGroups << " (excluded " << collisionGroupsBusyBystanders
+              << " busy-bystander samples)\n";
+    if (totalBystandersColl > 0) {
+        std::cout << "  Idle-bystander NAV-decode success: " << successBystandersColl << "/"
+                  << totalBystandersColl << " (" << (100.0 * successBystandersColl / totalBystandersColl)
+                  << "%)\n";
+    } else {
+        std::cout << "  (no collision groups observed in steady state)\n";
+    }
+    std::cout << "Isolated single-sender groups: " << singleGroups << " (excluded "
+              << singleGroupsBusyBystanders << " busy-bystander samples)\n";
+    if (totalBystandersSingle > 0) {
+        std::cout << "  Idle-bystander NAV-decode success: " << successBystandersSingle << "/"
+                  << totalBystandersSingle << " ("
+                  << (100.0 * successBystandersSingle / totalBystandersSingle) << "%)\n";
+    } else {
+        std::cout << "  (no isolated groups observed in steady state)\n";
+    }
+
+    // Verification C: for isolated (non-colliding) single-sender DS-CTS that a genuinely-idle
+    // bystander still failed to decode, was that failure explained by SOME OTHER transmission
+    // (the bystander itself going half-duplex, or a third-party interferer) starting mid-flight,
+    // i.e. after the TX-begin snapshot but before/during the DS-CTS's own airtime? If so, the
+    // miss isn't a "clean-channel SINR crash" -- it's just that the channel didn't stay idle for
+    // the whole airtime, which the instantaneous snapshot at TX-begin can't see.
+    const int64_t kDsCtsAirtimeNs = 50000; // ~50 us: conservative upper bound on 6 Mbps non-HT CTS airtime
+    long explainedBySelfTx = 0, explainedByThirdParty = 0, unexplained = 0;
+    for (const auto& [tNs, senderId, nid] : g_isolatedFailures) {
+        bool self = false, third = false;
+        for (const auto& [txNode, txTimeNs] : g_allTxBegins) {
+            if (txTimeNs <= tNs || txTimeNs > tNs + kDsCtsAirtimeNs) continue; // must start mid-flight
+            if (txNode == senderId) continue; // the DS-CTS sender re-transmitting isn't relevant here
+            if (txNode == nid) self = true;
+            else third = true;
+        }
+        if (self) explainedBySelfTx++;
+        else if (third) explainedByThirdParty++;
+        else unexplained++;
+    }
+    long totalIsolatedFailures = (long)g_isolatedFailures.size();
+    std::cout << "\n=== Verification C: Root cause of isolated-DS-CTS bystander failures ===\n";
+    std::cout << "Total isolated-group bystander failures analyzed: " << totalIsolatedFailures << "\n";
+    if (totalIsolatedFailures > 0) {
+        std::cout << "  Explained - bystander itself started TX mid-flight (half-duplex): "
+                  << explainedBySelfTx << " (" << (100.0 * explainedBySelfTx / totalIsolatedFailures) << "%)\n";
+        std::cout << "  Explained - third-party node started TX mid-flight (new interferer): "
+                  << explainedByThirdParty << " (" << (100.0 * explainedByThirdParty / totalIsolatedFailures)
+                  << "%)\n";
+        std::cout << "  Unexplained (idle for full ~" << (kDsCtsAirtimeNs / 1000)
+                  << "us window, still failed -> pure path-loss/SNR/preamble-detect miss): " << unexplained
+                  << " (" << (100.0 * unexplained / totalIsolatedFailures) << "%)\n";
+    }
 
     Simulator::Destroy();
     return 0;
