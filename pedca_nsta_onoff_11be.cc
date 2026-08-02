@@ -250,9 +250,9 @@ int main(int argc, char* argv[])
 
   WifiHelper wifi;
   wifi.SetStandard(WIFI_STANDARD_80211be);
-  wifi.ConfigHeOptions("GuardInterval", TimeValue(NanoSeconds(1600)));
+  wifi.ConfigHeOptions("GuardInterval", TimeValue(NanoSeconds(800)));
   wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
-                               "DataMode", StringValue("EhtMcs5"),
+                               "DataMode", StringValue("EhtMcs6"),
                                "ControlMode", StringValue("OfdmRate6Mbps"));
   
   // RTS/CTS
