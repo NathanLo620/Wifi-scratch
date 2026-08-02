@@ -25,16 +25,22 @@ SUMMARY = BASE / f"combo_percentile_summary_{RATE}.csv"
 QSRC = [0, 1, 2, 3, 4, 5]
 PSRC = [1, 2, 3]
 CWDS = [0, 1]
-STA_TYPES = [("all", "All STAs"), ("pedca", "P-EDCA STAs"), ("legacy", "Legacy STAs")]
+# NOTE: combo_percentile_summary_1Mbps.csv (written by sweep_pedca_count.py)
+# labels the whole-network view "vo", not "all" -- keep the internal key as
+# "vo" so lookups actually match rows in the CSV; "All STAs" is only the
+# display label.
+STA_TYPES = [("vo", "All STAs"), ("pedca", "P-EDCA STAs"), ("legacy", "Legacy STAs")]
 
 # nPedca regimes present per sta_type
-N_FOR = {"all": [5, 15, 30], "pedca": [5, 15, 30], "legacy": [5, 15]}
+N_FOR = {"vo": [5, 15, 30], "pedca": [5, 15, 30], "legacy": [5, 15]}
 
-# index: (sta_type, cwds, qsrc, psrc, nPedca) -> P99
-P99 = {}
+# index: (sta_type, cwds, qsrc, psrc, nPedca) -> (P50, P95, P99)
+P50, P95, P99 = {}, {}, {}
 for r in csv.DictReader(open(SUMMARY)):
     key = (r["delay_type"], int(r["CWds"]), int(r["QSRC"]),
            int(r["PSRC"]), int(r["nPedca"]))
+    P50[key] = float(r["P50_us"])
+    P95[key] = float(r["P95_us"])
     P99[key] = float(r["P99_us"])
 
 # ── styling ──────────────────────────────────────────────────────────
@@ -77,49 +83,58 @@ def put(ws, r, c, v, f=WHITE, bg=None, al=CENTER, num=None):
     if num: x.number_format = num
     return x
 
+METRICS = [("P50", P50), ("P95", P95), ("P99", P99)]
+
 for sta_type, label in STA_TYPES:
     ws = wb.create_sheet(title=label)
     ws.sheet_view.showGridLines = False
-    ws.sheet_properties.tabColor = {"all": "E3B341", "pedca": "1F6FEB",
+    ws.sheet_properties.tabColor = {"vo": "E3B341", "pedca": "1F6FEB",
                                     "legacy": "2DA44E"}[sta_type]
 
     ws.merge_cells("A1:I1")
     t = ws["A1"]
-    t.value = (f"{label} — P99 VO delay heatmap (µs)   |   "
+    t.value = (f"{label} — delay heatmap (µs)   |   "
                f"rows = QSRC, cols = PSRC   |   green = lower (better), red = higher")
     t.fill, t.font, t.alignment = TITLE_FILL, Font(color="F0F6FC", bold=True, size=12), LEFT
     ws.row_dimensions[1].height = 24
 
     row = 3
     for n in N_FOR[sta_type]:
-        # section header spanning both CWds blocks
+        # regime header spanning both CWds blocks
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=9)
         s = ws.cell(row=row, column=1,
                     value=f"▼ nPedca = {n} / 30        (left block CWds=0   ·   right block CWds=1)")
-        s.fill, s.font, s.alignment = SEC_FILL, BLUE, LEFT
+        s.fill, s.font, s.alignment = SEC_FILL, GOLD, LEFT
         row += 1
 
-        # two blocks: CWds=0 at cols 1-4, CWds=1 at cols 6-9
-        block_cols = {0: 1, 1: 6}   # starting column of the QSRC-label col
-        for cwds in CWDS:
-            c0 = block_cols[cwds]
-            # block label + PSRC header
-            put(ws, row, c0, f"CWds={cwds}", GOLD, HDR_FILL)
-            for j, ps in enumerate(PSRC, 1):
-                put(ws, row, c0 + j, f"PSRC={ps}", BOLD_W, HDR_FILL)
-            data_top = row + 1
-            for i, q in enumerate(QSRC):
-                rr = data_top + i
-                put(ws, rr, c0, f"QSRC={q}", BOLD_W, HDR_FILL, LEFT)
+        for metric_label, metric_dict in METRICS:
+            # metric sub-header
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=9)
+            m = ws.cell(row=row, column=1, value=f"   {metric_label}")
+            m.fill, m.font, m.alignment = HDR_FILL, BLUE, LEFT
+            row += 1
+
+            # two blocks: CWds=0 at cols 1-4, CWds=1 at cols 6-9
+            block_cols = {0: 1, 1: 6}   # starting column of the QSRC-label col
+            for cwds in CWDS:
+                c0 = block_cols[cwds]
+                put(ws, row, c0, f"CWds={cwds}", GOLD, HDR_FILL)
                 for j, ps in enumerate(PSRC, 1):
-                    v = P99.get((sta_type, cwds, q, ps, n))
-                    put(ws, rr, c0 + j, round(v, 0) if v is not None else None,
-                        DARK, None, CENTER, "#,##0")
-            # color scale over this block's data cells
-            rng = (f"{get_column_letter(c0+1)}{data_top}:"
-                   f"{get_column_letter(c0+3)}{data_top+len(QSRC)-1}")
-            ws.conditional_formatting.add(rng, color_scale())
-        row = data_top + len(QSRC) + 1   # gap before next regime
+                    put(ws, row, c0 + j, f"PSRC={ps}", BOLD_W, HDR_FILL)
+                data_top = row + 1
+                for i, q in enumerate(QSRC):
+                    rr = data_top + i
+                    put(ws, rr, c0, f"QSRC={q}", BOLD_W, HDR_FILL, LEFT)
+                    for j, ps in enumerate(PSRC, 1):
+                        v = metric_dict.get((sta_type, cwds, q, ps, n))
+                        put(ws, rr, c0 + j, round(v, 0) if v is not None else None,
+                            DARK, None, CENTER, "#,##0")
+                # color scale over this block's data cells
+                rng = (f"{get_column_letter(c0+1)}{data_top}:"
+                       f"{get_column_letter(c0+3)}{data_top+len(QSRC)-1}")
+                ws.conditional_formatting.add(rng, color_scale())
+            row = data_top + len(QSRC) + 1   # gap before next metric block
+        row += 1   # extra gap before next nPedca regime
 
     # widths
     for col in [1, 6]:

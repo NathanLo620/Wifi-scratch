@@ -122,6 +122,8 @@ def build_ticks(xmin, xmax, n=10):
 edca_csv = BASE / "edca_only" / f"edca_only_p00_vo_delay_pdf_nSta{N_STA}_{DATA_RATE}.csv"
 edca_hist = load_histogram(edca_csv) if edca_csv.exists() else None
 edca_pcts = percentiles(*edca_hist) if edca_hist else {}
+EDCA_P50 = edca_pcts.get(0.5)
+EDCA_P95 = edca_pcts.get(0.95)
 EDCA_P99 = edca_pcts.get(0.99)
 
 
@@ -173,18 +175,27 @@ for sta_key, sta_label, suffix in STA_TYPES:
         })
 
         # record summary row
-        def_p99 = def_pcts.get(0.99)
-        best_p99 = best["p99"]
-        gain_def = ((def_p99 - best_p99) / def_p99 * 100) if def_p99 else None
-        gain_edca = ((EDCA_P99 - best_p99) / EDCA_P99 * 100) if EDCA_P99 else None
+        def_p50, def_p95, def_p99 = def_pcts.get(0.5), def_pcts.get(0.95), def_pcts.get(0.99)
+        best_p50, best_p95, best_p99 = best["p50"], best["p95"], best["p99"]
+
+        def _gain(ref, val):
+            return ((ref - val) / ref * 100) if ref else None
+
         summary_rows.append({
             "sta_type": sta_key, "sta_label": sta_label, "n_pedca": n_pedca,
             "best_cwds": best["cwds"], "best_qsrc": best["qsrc"], "best_psrc": best["psrc"],
-            "best_p99": best_p99, "best_p50": best["p50"], "best_p95": best["p95"],
-            "def_p99": def_p99,
-            "edca_p99": EDCA_P99,
-            "gain_vs_def_pct": gain_def,
-            "gain_vs_edca_pct": gain_edca,
+            "best_p50": best_p50, "best_p95": best_p95, "best_p99": best_p99,
+            "def_p50": def_p50, "def_p95": def_p95, "def_p99": def_p99,
+            "edca_p50": EDCA_P50, "edca_p95": EDCA_P95, "edca_p99": EDCA_P99,
+            "gain_vs_def_p50_pct": _gain(def_p50, best_p50),
+            "gain_vs_def_p95_pct": _gain(def_p95, best_p95),
+            "gain_vs_def_p99_pct": _gain(def_p99, best_p99),
+            "gain_vs_edca_p50_pct": _gain(EDCA_P50, best_p50),
+            "gain_vs_edca_p95_pct": _gain(EDCA_P95, best_p95),
+            "gain_vs_edca_p99_pct": _gain(EDCA_P99, best_p99),
+            # kept for backward-compat field names used elsewhere in this script
+            "gain_vs_def_pct": _gain(def_p99, best_p99),
+            "gain_vs_edca_pct": _gain(EDCA_P99, best_p99),
         })
 
     # ── Plot a multi-panel figure for this STA type ──
@@ -270,57 +281,67 @@ for sta_key, sta_label, suffix in STA_TYPES:
 
 # ── Write numeric summary (CSV + txt) ──────────────────────────────────
 
+def _fmt(v, spec=".1f"):
+    return format(v, spec) if v is not None else "N/A"
+
+
 csv_out = BASE / f"best_vs_default_p99_gain_{DATA_RATE}.csv"
 with open(csv_out, "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["sta_type", "nPedca",
                 "min_p99_CWds", "min_p99_QSRC", "min_p99_PSRC",
-                "min_P99_us", "default_P99_us", "EDCA_only_P99_us",
-                "gain_vs_default_%", "gain_vs_EDCA_%",
-                "min_P50_us", "min_P95_us"])
+                "min_P50_us", "min_P95_us", "min_P99_us",
+                "default_P50_us", "default_P95_us", "default_P99_us",
+                "EDCA_only_P50_us", "EDCA_only_P95_us", "EDCA_only_P99_us",
+                "gain_vs_default_P50_%", "gain_vs_default_P95_%", "gain_vs_default_P99_%",
+                "gain_vs_EDCA_P50_%", "gain_vs_EDCA_P95_%", "gain_vs_EDCA_P99_%"])
     for r in summary_rows:
         w.writerow([
             r["sta_label"], r["n_pedca"],
             r["best_cwds"], r["best_qsrc"], r["best_psrc"],
-            f"{r['best_p99']:.1f}",
-            f"{r['def_p99']:.1f}" if r["def_p99"] else "N/A",
-            f"{r['edca_p99']:.1f}" if r["edca_p99"] else "N/A",
-            f"{r['gain_vs_def_pct']:.1f}" if r["gain_vs_def_pct"] is not None else "N/A",
-            f"{r['gain_vs_edca_pct']:.1f}" if r["gain_vs_edca_pct"] is not None else "N/A",
-            f"{r['best_p50']:.1f}", f"{r['best_p95']:.1f}",
+            _fmt(r["best_p50"]), _fmt(r["best_p95"]), _fmt(r["best_p99"]),
+            _fmt(r["def_p50"]), _fmt(r["def_p95"]), _fmt(r["def_p99"]),
+            _fmt(r["edca_p50"]), _fmt(r["edca_p95"]), _fmt(r["edca_p99"]),
+            _fmt(r["gain_vs_def_p50_pct"]), _fmt(r["gain_vs_def_p95_pct"]), _fmt(r["gain_vs_def_p99_pct"]),
+            _fmt(r["gain_vs_edca_p50_pct"]), _fmt(r["gain_vs_edca_p95_pct"]), _fmt(r["gain_vs_edca_p99_pct"]),
         ])
 print(f"  ✔ {csv_out.name}")
 
 # Human-readable
 txt_out = BASE / f"best_vs_default_p99_gain_{DATA_RATE}.txt"
 lines = []
-lines.append("=" * 100)
-lines.append(f"  P99 Delay: Min-P99 combo vs Default (CWds=0,QSRC=2,PSRC=1) vs EDCA-only")
+lines.append("=" * 118)
+lines.append(f"  Delay (P50/P95/P99): Min-P99 combo vs Default (CWds=0,QSRC=2,PSRC=1) vs EDCA-only")
 lines.append(f"  nSta={N_STA}  dataRate={DATA_RATE}  10 runs averaged")
-lines.append(f"  EDCA-only baseline P99 = {EDCA_P99:.0f} µs")
-lines.append("=" * 100)
+lines.append(f"  EDCA-only baseline  P50={_fmt(EDCA_P50,'.0f')}  P95={_fmt(EDCA_P95,'.0f')}  P99={_fmt(EDCA_P99,'.0f')} µs")
+lines.append("=" * 118)
 lines.append("")
 hdr = (f"  {'STA Type':12}{'nPedca':>7}  {'Best Params':14}"
-       f"{'Min P99':>10}{'Default P99':>12}{'EDCA P99':>10}"
+       f"{'Pct':>5}{'Best':>9}{'Default':>9}{'EDCA':>9}"
        f"{'Gain vs Def':>13}{'Gain vs EDCA':>14}")
 lines.append(hdr)
 lines.append("  " + "-" * (len(hdr) - 2))
-cur_type = None
 for r in summary_rows:
-    if r["sta_label"] != cur_type:
-        cur_type = r["sta_label"]
     params = f"c{r['best_cwds']}·q{r['best_qsrc']}·s{r['best_psrc']}"
-    dp = f"{r['def_p99']:.0f}" if r["def_p99"] else "N/A"
-    gd = f"{r['gain_vs_def_pct']:+.1f}%" if r["gain_vs_def_pct"] is not None else "N/A"
-    ge = f"{r['gain_vs_edca_pct']:+.1f}%" if r["gain_vs_edca_pct"] is not None else "N/A"
-    lines.append(
-        f"  {r['sta_label']:12}{r['n_pedca']:>7}  {params:14}"
-        f"{r['best_p99']:>10.0f}{dp:>12}{EDCA_P99:>10.0f}"
-        f"{gd:>13}{ge:>14}"
-    )
-lines.append("")
-lines.append("  Gain = (reference_P99 - min_P99) / reference_P99 × 100  (positive = min combo is better)")
-lines.append("  Note: 'gain vs Def' positive means the min-P99 combo beats the default parameter set.")
+    for pct_label, best_v, def_v, edca_v, gd_v, ge_v in [
+        ("P50", r["best_p50"], r["def_p50"], r["edca_p50"],
+         r["gain_vs_def_p50_pct"], r["gain_vs_edca_p50_pct"]),
+        ("P95", r["best_p95"], r["def_p95"], r["edca_p95"],
+         r["gain_vs_def_p95_pct"], r["gain_vs_edca_p95_pct"]),
+        ("P99", r["best_p99"], r["def_p99"], r["edca_p99"],
+         r["gain_vs_def_p99_pct"], r["gain_vs_edca_p99_pct"]),
+    ]:
+        label = f"{r['sta_label']:12}{r['n_pedca']:>7}  {params:14}" if pct_label == "P50" else " " * 35
+        gd = f"{gd_v:+.1f}%" if gd_v is not None else "N/A"
+        ge = f"{ge_v:+.1f}%" if ge_v is not None else "N/A"
+        lines.append(
+            f"  {label}{pct_label:>5}{_fmt(best_v,'.0f'):>9}{_fmt(def_v,'.0f'):>9}{_fmt(edca_v,'.0f'):>9}"
+            f"{gd:>13}{ge:>14}"
+        )
+    lines.append("")
+lines.append("  Gain = (reference_Px - min_combo_Px) / reference_Px × 100  (positive = min-P99 combo is better)")
+lines.append("  Note: the parameter combo is selected by MIN P99; its P50/P95 are reported for the same combo,")
+lines.append("        so gains at P50/P95 can occasionally be smaller (or negative) even though P99 improves.")
 txt = "\n".join(lines) + "\n"
 txt_out.write_text(txt)
 print(f"  ✔ {txt_out.name}")
