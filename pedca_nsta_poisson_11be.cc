@@ -21,6 +21,8 @@
 #include "ns3/applications-module.h"
 #include "ns3/wifi-tx-stats-helper.h"
 #include "ns3/qos-frame-exchange-manager.h"
+#include "ns3/pedca-controller.h"
+#include "ns3/pedca-parameter-set.h"
 #include "ns3/wifi-mac-header.h"
 #include "ns3/wifi-ppdu.h"
 #include "ns3/wifi-psdu.h"
@@ -39,6 +41,39 @@
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("PedcaVerificationNSta");
+
+// ── Adaptive P-EDCA: controller trajectory, one row per control step ──
+static std::ofstream g_trajCsv;
+
+static void
+ControlStepTrace(Time now,
+                 uint32_t kHat,
+                 uint8_t cwds,
+                 uint8_t qsrc,
+                 uint8_t psrc,
+                 uint32_t nAggressive,
+                 uint32_t nConservative,
+                 uint32_t nUnchanged,
+                 double busyFrac,
+                 double collRate,
+                 double collRateFrame,
+                 uint32_t dsCtsFrames,
+                 uint32_t dsCtsBursts,
+                 uint32_t bsrSum,
+                 uint32_t lliCount,
+                 bool changed)
+{
+    if (!g_trajCsv.is_open())
+    {
+        return;
+    }
+    g_trajCsv << now.GetSeconds() << "," << kHat << "," << +cwds << "," << +qsrc << "," << +psrc
+              << "," << nAggressive << "," << nConservative << "," << nUnchanged << "," << busyFrac
+              << "," << collRate << "," << collRateFrame << "," << dsCtsFrames << ","
+              << dsCtsBursts << "," << bsrSum << "," << lliCount << "," << (changed ? 1 : 0)
+              << "\n";
+}
+
 
 static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
@@ -307,6 +342,33 @@ int main(int argc, char* argv[])
   uint32_t psrc = 1;          // dot11PEDCAConsecutiveAttempt (max consecutive P-EDCA attempts)
   std::string clogFile = "scratch/pedca_stage2_stats.log";
 
+  // ── Adaptive P-EDCA closed loop ──
+  bool     adaptive = false;        // opt-in: keeps existing sweeps bit-identical by default
+  std::string policy = "kdriven";   // kdriven | v2 | fixed
+  int32_t  kOverride = -1;          // force the P-EDCA STA count instead of estimating it
+  double   qsrcIntercept = 0.5;     // QSRC = clamp(round(intercept + slope*k), 0, 5)
+  double   qsrcSlope = 0.2;
+  uint32_t cwdsKDriven = 1;
+  uint32_t psrc3MaxK = 10;
+  uint32_t psrc2MaxK = 22;
+  uint32_t controlPeriodMs = 100;
+  double   delayBoundMs = 10.0;
+  double   lliFraction = 0.7;
+  double   busyHigh = 0.85;
+  double   collHigh = 0.90;
+  double   collLow = 0.30;
+  uint32_t lliHigh = 5;
+  double   bsrHigh = 8.0;
+  uint32_t cwdsMax = 2;
+  uint32_t qsrcAggressive = 1;
+  uint32_t psrcAggressive = 3;
+  uint32_t qsrcConservative = 5;
+  uint32_t psrcConservative = 1;
+  bool     burstCollRate = true;
+  double   ctrlStart = -1.0;        // <0 means warmupTime
+  std::string trajOutput = "";      // omit the flag entirely to disable
+
+
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta",   "Number of stations", nSta);
   cmd.AddValue("simTime","Simulation time (seconds)", simTime);
@@ -325,7 +387,36 @@ int main(int argc, char* argv[])
   cmd.AddValue("qsrc","dot11PEDCARetryThreshold: QSRC must reach this to trigger P-EDCA", qsrc);
   cmd.AddValue("psrc","dot11PEDCAConsecutiveAttempt: max consecutive P-EDCA attempts", psrc);
   cmd.AddValue("clogFile","Redirect std::clog to this file (empty = stderr)", clogFile);
+  cmd.AddValue("adaptive","Run the AP-side P-EDCA controller (0 = plain static P-EDCA)", adaptive);
+  cmd.AddValue("policy","Controller rule set: kdriven | v2 | fixed", policy);
+  cmd.AddValue("kOverride","Force the P-EDCA STA count the controller assumes; <0 = estimate", kOverride);
+  cmd.AddValue("qsrcIntercept","Intercept of the k-driven QSRC law", qsrcIntercept);
+  cmd.AddValue("qsrcSlope","Slope per P-EDCA STA of the k-driven QSRC law", qsrcSlope);
+  cmd.AddValue("cwdsKDriven","CWds advertised by the k-driven policy", cwdsKDriven);
+  cmd.AddValue("psrc3MaxK","Largest k that still receives PSRC 3", psrc3MaxK);
+  cmd.AddValue("psrc2MaxK","Largest k that still receives PSRC 2", psrc2MaxK);
+  cmd.AddValue("controlPeriodMs","Controller period in milliseconds", controlPeriodMs);
+  cmd.AddValue("ctrlStart","When the controller starts observing (s); <0 means warmupTime", ctrlStart);
+  cmd.AddValue("delayBoundMs","AC_VO delay budget the LLI trigger measures against (ms)", delayBoundMs);
+  cmd.AddValue("lliFraction","Fraction of the delay bound beyond which LLI is set", lliFraction);
+  cmd.AddValue("busyHigh","V2: busy fraction turning on the conservative gate", busyHigh);
+  cmd.AddValue("collHigh","V2: DS-CTS collision rate pushing CWds to cwdsMax", collHigh);
+  cmd.AddValue("collLow","V2: DS-CTS collision rate dropping CWds to 0", collLow);
+  cmd.AddValue("lliHigh","V2: per-STA LLI count marking delay pressure", lliHigh);
+  cmd.AddValue("bsrHigh","V2: per-STA buffer status marking queue pressure", bsrHigh);
+  cmd.AddValue("cwdsMax","V2: largest CWds the controller may choose", cwdsMax);
+  cmd.AddValue("qsrcAggressive","V2: QSRC of the aggressive corner", qsrcAggressive);
+  cmd.AddValue("psrcAggressive","V2: PSRC of the aggressive corner", psrcAggressive);
+  cmd.AddValue("qsrcConservative","V2: QSRC of the conservative corner", qsrcConservative);
+  cmd.AddValue("psrcConservative","V2: PSRC of the conservative corner", psrcConservative);
+  cmd.AddValue("burstCollRate","V2: measure DS-CTS collisions per burst (1) or per frame (0)", burstCollRate);
+  cmd.AddValue("trajOutput","Controller trajectory CSV; omit the flag entirely to disable", trajOutput);
   cmd.Parse(argc, argv);
+
+  if (ctrlStart < 0.0)
+  {
+      ctrlStart = warmupTime;
+  }
 
   // ── Redirect std::clog (where all the [P-EDCA ...] / [RTS-RX] / [RTS SENT] traces go)
   //    to a dedicated log file so the user can post-process it.
@@ -391,13 +482,28 @@ int main(int argc, char* argv[])
   Config::SetDefault("ns3::WifiMac::BE_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
   Config::SetDefault("ns3::WifiMac::BK_MaxAmsduSize", UintegerValue(effectiveMaxAmsduSize));
   
+  // ── Adaptive P-EDCA feedback path. Confined to the adaptive branch so that --adaptive=0
+  //    leaves this scenario bit-identical to what it was before the controller existed.
+  if (adaptive)
+  {
+      Config::SetDefault("ns3::QosFrameExchangeManager::SetQueueSize", BooleanValue(true));
+      // The 20 ms default expires a buffer status report before a 100 ms control step reads it.
+      Config::SetDefault("ns3::ApWifiMac::BsrLifetime",
+                         TimeValue(MilliSeconds(2 * controlPeriodMs)));
+      Config::SetDefault("ns3::QosFrameExchangeManager::PedcaLliDelayBound",
+                         TimeValue(MilliSeconds(delayBoundMs)));
+      Config::SetDefault("ns3::QosFrameExchangeManager::PedcaLliFraction",
+                         DoubleValue(lliFraction));
+  }
+
   Ssid ssid = Ssid("wifi-backoff-vo");
 
   // AP Setup
   WifiMacHelper mac;
   mac.SetType("ns3::ApWifiMac",
               "Ssid", SsidValue(ssid),
-              "QosSupported", BooleanValue(true));
+              "QosSupported", BooleanValue(true),
+              "PedcaControl", BooleanValue(adaptive));
   NetDeviceContainer apDevices = wifi.Install(phy, mac, wifiApNode);
   
   // STA Setup - P-EDCA enabled for first nPedcaSta STAs
@@ -427,6 +533,55 @@ int main(int argc, char* argv[])
           qFem->SetQsrc(static_cast<uint16_t>(qsrc));
           qFem->SetPsrc(static_cast<uint8_t>(psrc));
       }
+  }
+
+  // ── AP-side controller. Both arms seed the STAs with the same theta above, so the adaptive
+  //    arm starts exactly where the fixed arm stays.
+  Ptr<PedcaController> pedcaController;
+  if (adaptive)
+  {
+      pedcaController = CreateObject<PedcaController>();
+      pedcaController->SetAttribute("Policy", StringValue(policy));
+      pedcaController->SetAttribute("KOverride", IntegerValue(kOverride));
+      pedcaController->SetAttribute("QsrcIntercept", DoubleValue(qsrcIntercept));
+      pedcaController->SetAttribute("QsrcSlope", DoubleValue(qsrcSlope));
+      pedcaController->SetAttribute("CwdsKDriven", UintegerValue(cwdsKDriven));
+      pedcaController->SetAttribute("Psrc3MaxK", UintegerValue(psrc3MaxK));
+      pedcaController->SetAttribute("Psrc2MaxK", UintegerValue(psrc2MaxK));
+      pedcaController->SetAttribute("Period", TimeValue(MilliSeconds(controlPeriodMs)));
+      pedcaController->SetAttribute("BusyHigh", DoubleValue(busyHigh));
+      pedcaController->SetAttribute("CollHigh", DoubleValue(collHigh));
+      pedcaController->SetAttribute("CollLow", DoubleValue(collLow));
+      pedcaController->SetAttribute("LliHigh", UintegerValue(lliHigh));
+      pedcaController->SetAttribute("BsrPerStaHigh", DoubleValue(bsrHigh));
+      pedcaController->SetAttribute("CwdsMax", UintegerValue(cwdsMax));
+      pedcaController->SetAttribute("QsrcAggressive", UintegerValue(qsrcAggressive));
+      pedcaController->SetAttribute("PsrcAggressive", UintegerValue(psrcAggressive));
+      pedcaController->SetAttribute("QsrcConservative", UintegerValue(qsrcConservative));
+      pedcaController->SetAttribute("PsrcConservative", UintegerValue(psrcConservative));
+      pedcaController->SetAttribute("UseBurstCollRate", BooleanValue(burstCollRate));
+      pedcaController->Setup(DynamicCast<WifiNetDevice>(apDevices.Get(0)));
+      pedcaController->SetInitialTheta(PedcaTheta{static_cast<uint8_t>(cwds),
+                                                 static_cast<uint8_t>(qsrc),
+                                                 static_cast<uint8_t>(psrc)});
+
+      if (!trajOutput.empty())
+      {
+          g_trajCsv.open(trajOutput, std::ios::out | std::ios::trunc);
+          if (g_trajCsv.is_open())
+          {
+              g_trajCsv << "time_s,k_hat,cwds,qsrc,psrc,n_aggressive,n_conservative,"
+                           "n_unchanged,busy_frac,coll_rate,coll_rate_frame,dscts_frames,"
+                           "dscts_bursts,bsr_sum,lli_count,changed\n";
+              pedcaController->TraceConnectWithoutContext("ControlStep",
+                                                          MakeCallback(&ControlStepTrace));
+          }
+      }
+
+      pedcaController->Start(Seconds(ctrlStart));
+      std::clog << "[P-EDCA CTRL] adaptive on: policy=" << policy
+                << " period=" << controlPeriodMs << "ms ctrlStart=" << ctrlStart
+                << "s trueNPedca=" << nPedcaSta << std::endl;
   }
 
   // ---------------------- WifiTxStatsHelper ----------------------
@@ -1039,6 +1194,10 @@ int main(int argc, char* argv[])
     std::cout << "LEGACY_STA_AVG_ACCESS_DELAY: " << (legacyStaAccessDelay / legacyStaSuccCount) << "\n";
   }
   std::cout << "--- EXTENDED_STATS_END ---\n";
+
+  if (g_trajCsv.is_open()) {
+    g_trajCsv.close();
+  }
 
   Simulator::Destroy();
 

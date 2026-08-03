@@ -8,6 +8,286 @@
 >
 > ns-3 version: **ns-3.45**, `src/wifi/model/`. All paths below are relative to that dir
 > unless noted. This was authored against our tree on 2026-07-14.
+>
+> ⚠ **2026-08-02: 這份 port guide 描述的設計從未進入這棵樹，而且它假設的是「單 DS-CTS」
+> sender。目前實際運行的實作與調控流程請看下面的【現行實作】一節；本節（§E0 起）與 §0–§9
+> 保留作為歷史對照。**
+
+---
+
+# 【現行實作】Adaptive P-EDCA 調控流程（2026-08-02）
+
+> **這一節描述的是目前這棵樹上真正 build 過、跑過、量過的實作。**
+> 底下的 §E0–§E6 與 §0–§9 是 2026-07 針對**單** DS-CTS sender 寫的設計文件，而且那份設計
+> **從未進入這棵樹**（2026-08-02 稽核確認所有符號都不存在）。兩邊衝突時**以本節為準**；
+> 舊章節保留作為歷史對照與 merge 參考。
+>
+> 對應 commit：model `[v6.4.2] Adaptive P-EDCA implemenation added` 之後的修改。
+> 底層 sender 是 **dual DS-CTS**（`m_dsCtsRepeat=2`），與舊文件假設的單 DS-CTS 不同。
+
+## N1. 系統架構
+
+```
+┌──────────────────────── AP (WifiNetDevice, link 0) ────────────────────────┐
+│                                                                             │
+│  WifiPhy StateHelper ─"State"──────────────┐  通道忙碌時間                   │
+│  WifiPhy ─"PhyRxPpduDrop"──────────────────┤  掉掉的 DS-CTS                  │
+│  FrameExchangeManager ─"DsCtsRx"───────────┤  解碼成功的 DS-CTS              │
+│  QosFrameExchangeManager                   │                                │
+│    ├ GetLliRxCount() / GetLliRxCount(addr) ┤  延遲壓力（LLI）                │
+│    └ GetVoRxCount()                        │  AC_VO 收包數（LLI 的分母）     │
+│  ApWifiMac::GetBufferStatus(tid, addr) ────┤  每台佇列壓力（BSR）            │
+│                                            ▼                                │
+│                                   ┌──────────────────┐                      │
+│                                   │  PedcaController  │  每 Period(100ms)   │
+│                                   │      Step()       │  觀測 → 決策 → 下發  │
+│                                   └────────┬─────────┘                      │
+│                                            │ SetPedcaParametersBulk(map)    │
+│                                   ┌────────▼─────────┐                      │
+│                                   │    ApWifiMac      │ m_pedcaThetaByAid   │
+│                                   └────────┬─────────┘                      │
+│                                            │ P-EDCA Parameter Set IE (250)  │
+└────────────────────────────────────────────┼───────────────────────────────┘
+       ▲ UL QoS Data                          ▼ beacon / probe resp / assoc resp
+       │ QoS Control = [7-bit Queue Size | 1-bit LLI]
+┌──────┴──────────────────── STA_i (PedcaSupported=true) ────────────────────┐
+│  送包: FinalizeMacHeader / ForwardMpduDown → SetQueueSizeAndPedcaLli()      │
+│        VO 封包在佇列停留 > 0.7 × 10ms → 設 LLI bit；queue size cap 到 127    │
+│  收 beacon: ApplyOperationalSettings → ApplyPedcaParameters()               │
+│        → GetEntryFor(m_aid) → qosFem->SetCwds/SetQsrc/SetPsrc               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**分工**：AP 只當 controller + advertiser，**不**當 P-EDCA sender（用 `PedcaControl`，
+絕對不要用 `PedcaSupported`，見 §N8-1）。STA 才是真正的 P-EDCA sender。
+
+## N2. 一個控制週期的時序
+
+```
+  |<──────────── 觀測期 Period = 100ms ────────────>|
+  | PHY State trace 累計 busy 時間                    |
+  | DsCtsRx / PhyRxPpduDrop 累計 DS-CTS（分 burst）   |   Step() 在週期結束執行:
+  | FEM 累計 LLI 數、AC_VO 收包數                      |   ┌────────────────────────┐
+  | STA 上行時把 BSR/LLI 寫進 QoS Control              |──▶│ 1. 收攏觀測、算衍生量    │
+  |                                                  |   │ 2. 依 policy 決定 θ     │
+  |                                                  |   │ 3. SetPedcaParametersBulk│
+  |                                                  |   │ 4. 觸發 ControlStep trace│
+  |                                                  |   │ 5. 歸零累加器、排下一次   │
+                                                         └───────────┬────────────┘
+   新 θ 透過「下一個 beacon」下發 ─────────────────────────────────────┘
+   → STA ApplyPedcaParameters() → 下次送包生效
+```
+
+⚠ **端到端迴路延遲 = Period(100ms) + 最多一個 beacon interval(102.4ms)**。
+on/off 與 MMPP 的 burst 平均長度是 **0.1 秒**，所以目前的迴路比它要追的負載**慢一到兩個
+burst**。逐 burst 追蹤在預設 beacon interval 下**物理上做不到**（見 §N8-4）。
+
+## N3. 觀測訊號
+
+| 訊號 | 粒度 | 來源 | 用於 |
+|---|---|---|---|
+| `busyFrac` | BSS | `WifiPhyStateHelper` "State"，累計 TX/RX/CCA_BUSY/SWITCHING ÷ Period | v2 的壅塞閘門（實測永遠不觸發，見 §N8-3） |
+| `overhead` | BSS | `bursts × BurstCost(185µs) ÷ Period` | **loaddriven 主訊號**（Stage-1 佔用介質的比例） |
+| `urgency` | BSS | `ΔGetLliRxCount() ÷ ΔGetVoRxCount()` | **loaddriven 主訊號**（快超過延遲預算的封包比例） |
+| `collRate` | BSS | burst-level：完全沒解到任何 frame 的 burst ÷ 總 burst | v2 的 CWds 規則；也記 frame-level 當診斷 |
+| `dsCtsBursts` / `dsCtsFrames` | BSS | `FrameExchangeManager::GetDsCtsBurstRxCount()` / `GetDsCtsRxCount()` | overhead 的分子、trace |
+| `bsrSta` | per-STA | `ApWifiMac::GetBufferStatus(tid∈{6,7}, addr)`，跳過 255 | v2 的逐台判斷 |
+| `lliSta` | per-STA | `GetLliRxCount(addr)` 的週期差分 | v2 的逐台判斷 |
+| `kHat` | BSS | 曾送過 LLI 的 STA 集合大小（sticky）；`KOverride≥0` 時直接用該值 | kdriven |
+
+**DS-CTS burst 的定義**：dual DS-CTS 下一次 Stage-1 送兩個 frame（相隔 SIFS），所以要
+把 frame 併成 burst 才有意義。`DsCtsBurstGap`(100µs) 以內的相鄰觀測算同一個 burst；
+一個 burst 只要有任一 frame 解到就算成功。**這是為什麼不能用 frame-level collision rate**：
+第一個 frame 被撞掉、第二個成功，正是 dual DS-CTS 的設計本意，卻會被算成 0.5 的碰撞率。
+
+## N4. 四種 policy
+
+由 `PedcaController::Policy` attribute 選擇（scenario CLI `--policy`）。
+
+### N4.1 `loaddriven`（**bursty / 變動負載建議用這個**）
+
+CWds 固定 1、PSRC 固定 3，**QSRC 是唯一的閉迴路變數**：
+
+```
+每個週期:
+    overhead = bursts × 185µs / Period
+    urgency  = ΔLLI / Δ(AC_VO 收包數)
+
+    if   overhead > OverheadHigh (0.06)                        → QSRC += 1
+    elif urgency > UrgencyHigh (0.15) and overhead < OverheadLow (0.03)
+                                                               → QSRC -= 1
+    else                                                        → 維持
+    clamp 到 [QsrcFloor (1), 5]
+```
+
+**這個不對稱是刻意的、而且是量出來的**：
+- **往上只看 overhead**：P-EDCA 佔太多介質時，它就是在跟自己要保護的流量搶。
+- **往下還必須有人真的快超過延遲預算**。如果只看 overhead 就往下調，光負載時介質是空的、
+  overhead≈0，會被誤讀成「有餘裕」→ QSRC 掉到下限 → P-EDCA 在稀疏流量上亂觸發 →
+  **實測尾端延遲 +45%**。urgency 這個條件就是擋住這件事的。
+- **QSRC 下限 1**：QSRC=0 在 15 個 (traffic × 負載) 格子裡幾乎都是最差或接近最差
+  （光負載 k=30 是 +68.6%，CBR k=15 是 +29.3%）。
+
+為什麼 CWds 和 PSRC 不進迴路：離線 sweep 顯示 CWds=1 在 15 格裡 13 格最佳（另兩格差 <3%），
+是 don't-care；PSRC 固定 3 再讓 QSRC 自由移動，離線超出 oracle 只有 2.8%，跟三個參數
+全調（2.9%）一樣好。少一個旋鈕、少一個震盪來源。
+
+### N4.2 `kdriven`（**光負載會壞掉，不要用在 bursty**）
+
+```
+kHat = |曾送過 LLI 的 STA 集合|          (sticky，或由 KOverride 指定)
+CWds = 1
+QSRC = clamp(round(0.5 + 0.2 × kHat), 0, 5)
+PSRC = 3 if kHat ≤ 10 ; 2 if kHat ≤ 22 ; else 1
+```
+
+這條法則是 2026-08-01 sweep 擬合出來的，在**固定負載**下很好（離線超出 oracle 2.9%，
+對照固定預設 15.8%）。但 k 是**組態屬性不是運行時狀態**，光負載下 LLI 很少觸發 →
+kHat 塌掉 → QSRC 掉到 1 → **實測 On-Off 0.1Mbps +45.0%、MMPP 0.1Mbps +33.5%**。
+保留它是為了對照與重現離線結論，**不建議當預設**。
+
+### N4.3 `v2`（歷史規則，實測三條全是死的或方向錯的）
+
+BSS-wide CWds 由 collRate 決定 + busyFrac 全域保守閘門 + 逐台激進/保守角落。
+在目前的 dual DS-CTS model 上：
+- `busyFrac > 0.85` 閘門**永遠不觸發**：實測 channel idle 在所有 15 格都是 23–27%，
+  busyFrac ≈ 0.75。
+- `collRate → CWds` **沒有作用點**：CWds 是 don't-care。
+- 逐台「激進角落 = QSRC=1, PSRC=3」其實是 **k=5 的最佳解被套用到所有負載**，
+  在高競爭下接近最差。
+- 實測在 k=15 的三種 traffic **全部輸給「什麼都不做」**（+9.7 / +2.8 / +4.3%）。
+
+### N4.4 `fixed`
+
+把 `SetInitialTheta()` 給的 θ 原封不動每週期推一次。用途是**對照組**：機制全開
+（IE + BSR + LLI + 感測）但迴路不動，可以量出機制本身的成本。
+
+## N5. 參數下發路徑
+
+**IE 格式**（`pedca-parameter-set.{h,cc}`，Element ID **250**，取自保留區 243–254）：
+
+```
+Information field = 1 + 5×N octets
+ ┌────────────┬──────────────────────────────────────────┐
+ │Update Count│  N 個 5-byte entry                        │
+ │ (1 octet)  │  AID(2B, LE) + CWds + QSRC_th + PSRC_lim  │
+ └────────────┴──────────────────────────────────────────┘
+```
+Update Count 每次 push 都 +1（語意是「第幾次推播」，不是「改了幾次」）。超過 255 bytes 時
+`WifiInformationElement::Serialize` 會自動分片，不需要限制 STA 數。
+
+**下發點**：`SendOneBeacon` / `GetProbeRespProfile` / `GetAssocResp` 三處，
+guard 都是 `if (GetPedcaSupported() || m_pedcaControl)`。
+
+**STA 套用**（`StaWifiMac::ApplyPedcaParameters()`）：
+1. 用**私有成員 `m_aid`**，不是 `GetAssociationId()`（後者 assert `IsAssociated()`，
+   在處理 assoc-resp 當下還是 false）。未關聯時 `m_aid==0`，不會誤配到任何真實 AID。
+2. `GetEntryFor(m_aid)` 找不到自己那列就完全不動作。
+3. **QSRC clamp 到 `FrameRetryLimit - 1`**：`qos-fem` 會在
+   `FrameRetryLimit <= m_qsrc_threshold` 時自動抬高 retry limit 而且**只升不降**，
+   會永久改變該 STA 全部 AC 的重傳行為。被 clamp 時印 `[P-EDCA PARAM CLAMP]`。
+4. **只在值真的改變時才寫 FEM**：beacon 每 102.4ms 重播同一組 θ，無條件寫會一直重置
+   sender 狀態。`SetPsrc()` 本身也做成 idempotent。
+
+## N6. Attributes 一覽
+
+**`PedcaController`**（scenario 都有對應 CLI）：
+
+| Attribute | 預設 | 用途 |
+|---|---|---|
+| `Policy` | `kdriven` ⚠ | `kdriven` / `loaddriven` / `v2` / `fixed` |
+| `Period` | 100 ms | 控制週期 |
+| `OverheadHigh` / `OverheadLow` | 0.06 / 0.03 | loaddriven 的 Stage-1 airtime 上下界 |
+| `UrgencyHigh` / `UrgencyLow` | 0.15 / 0.05 | loaddriven 的 LLI 比例門檻 |
+| `QsrcFloor` | 1 | QSRC 下限，0 在各種負載都很差 |
+| `BurstCost` | 185 µs | 一個 Stage-1 burst 的介質成本（2×44 + 16 + 81） |
+| `KOverride` | −1 | ≥0 時強制 k，用來把 policy 誤差和估計器誤差分開量 |
+| `QsrcIntercept` / `QsrcSlope` | 0.5 / 0.2 | kdriven 的 QSRC 線性law |
+| `CwdsKDriven` | 1 | kdriven/loaddriven 下發的 CWds |
+| `Psrc3MaxK` / `Psrc2MaxK` | 10 / 22 | kdriven 的 PSRC 分段點 |
+| `DsCtsBurstGap` | 100 µs | DS-CTS 併 burst 的間隔門檻 |
+| `BusyHigh` / `CollHigh` / `CollLow` / `LliHigh` / `BsrPerStaHigh` | 0.85 / 0.90 / 0.30 / 5 / 8.0 | 僅 v2 使用 |
+| `Qsrc/PsrcAggressive`, `Qsrc/PsrcConservative`, `CwdsMax` | 1/3, 5/1, 2 | 僅 v2 使用 |
+
+⚠ **`Policy` 的預設值目前仍是 `kdriven`，但 `kdriven` 在光負載下實測會爆掉（+45%）。**
+這是歷史遺留：`kdriven` 先實作、當時定為預設，`loaddriven` 是後來因應 bursty 情境才加的。
+**跑 on/off / MMPP / 光負載一律要明確加 `--policy=loaddriven`**，否則會拿到會壞掉的那條。
+是否要把預設改成 `loaddriven` 尚未定案（改了會變更既有命令的行為）。
+
+**`QosFrameExchangeManager`**：`PedcaLliDelayBound`(10 ms)、`PedcaLliFraction`(0.7)、
+`PedcaResetPsrcOnLimitChange`(false)。
+**`ApWifiMac`**：`PedcaControl`(false)。
+**scenario 必設**：`SetQueueSize=true`、`ApWifiMac::BsrLifetime = 2×Period`
+（預設 20 ms 會在 controller 讀到之前就過期）。
+
+## N7. 實測結果
+
+**On-Off / MMPP，nSta=30，3 seeds，8 秒，P-EDCA STA P99 對固定預設 (0,2,1)**：
+
+| traffic | rate | k | kdriven | loaddriven |
+|---|---|---|---|---|
+| On-Off | 0.1M | 5 | **+45.0%** | 0.0% |
+| On-Off | 0.1M | 15 | +0.9% | 0.0% |
+| MMPP | 0.1M | 5 | +1.7% | +0.5% |
+| MMPP | 0.1M | 15 | **+33.5%** | +0.1% |
+| On-Off | 1M | 5 | −22.4% | **−27.8%** |
+| On-Off | 1M | 15 | **−5.3%** | −1.4% |
+| MMPP | 1M | 5 | −20.3% | **−22.1%** |
+| MMPP | 1M | 15 | **−7.1%** | +6.5% |
+
+**四組對照（On-Off 1Mbps，圖在 `delay_pdf/11be/adaptive_compare/`）**：
+
+| nPedca | arm | P50 | P95 | P99 | vs default |
+|---|---|---|---|---|---|
+| 5 | EDCA only | 1.75 | 9.33 | 13.48 | +13.6% |
+| 5 | default (0,2,1) | 1.46 | 5.65 | 11.87 | — |
+| 5 | best fixed (1,3,3) | 1.37 | 4.55 | 8.18 | −31.1% |
+| 5 | **adaptive (loaddriven)** | 1.44 | 5.20 | **8.99** | **−24.2%** |
+| 15 | EDCA only | 1.75 | 9.33 | 13.48 | −0.4% |
+| 15 | default (0,2,1) | 1.60 | 8.14 | 13.53 | — |
+| 15 | best fixed (1,4,3) | 1.81 | 7.45 | 11.75 | −13.2% |
+| 15 | **adaptive (loaddriven)** | 1.99 | 9.38 | 13.33 | −1.5% |
+
+以「補上 oracle 落差的比例」看：**k=5 補上 78%，k=15 只補上 11%**。
+（best fixed 是用離線 sweep 針對該 traffic 與該 k 挑出來的，adaptive 兩者都不知道。）
+
+## N8. 已知限制與踩過的坑
+
+1. **AP 只能用 `PedcaControl`，不能用 `PedcaSupported`**。後者會讓 AP 自己的 VO 管理幀
+   啟動 P-EDCA sender、覆寫自身 VO EDCAF，再透過 beacon 的 `EdcaParameterSet`
+   毒化全體 STA 的 VO CW。`qos-fem` 的 gate 沒有檢查 `TypeOfStation`，這個坑今天仍然在。
+2. **DS-CTS 接收計數必須放在 `FrameExchangeManager::PostProcessFrame`，不能放
+   `UpdateNav`**。`UpdateNav` 的 DS-CTS 分支在 `if (navEnd > m_navEnd)` 裡面，而 dual
+   DS-CTS 刻意讓兩個 frame 的 NAV 落在同一個絕對時刻，所以第二個 frame 的
+   `navEnd == m_navEnd`，**每個 burst 的第二個 frame 都會被漏掉**。
+3. **`busyFrac` 在這個 model 沒有鑑別力**：所有 15 格都是 0.73–0.77，當不了負載訊號，
+   只能當溢位保護。
+4. **迴路比 burst 慢**：Period 100ms + beacon 102.4ms vs burst 平均 0.1s。要真的逐 burst
+   追蹤必須縮短 beacon interval（例如 20ms），**尚未測試**。目前能追的只有比它慢的漂移。
+5. **LLI 估計器會低估 k**：CBR 1Mbps 真值 15 時 kHat 收斂到 10，因為 5 台從沒讓封包等到
+   LLI 門檻。偏誤方向是安全的（低估比高估便宜），但這是 kdriven 光負載壞掉的根因。
+   要修就得加 DS-CTS burst → Stage-2 歸屬（burst 計數器已經有了）。
+6. **改動 `FrameExchangeManager` 成員後，沒重建的 scratch binary 會安靜印出垃圾**
+   （inline getter 讀到錯的 offset，不 crash 不警告）。比對任何兩個 arm 前先全部重建。
+7. **`--trajOutput=` 傳空字串會弄壞 CommandLine 解析**，不用就整個省略該參數。
+8. **方法論**：sweep 資料裡只有靜態 θ 的 run，拿它評分一條規則量到的是「能不能挑出最好的
+   靜態 θ」，不是「閉迴路能不能靠移動贏過靜態 θ」。kdriven 離線拿 2.9% 是因為它有 k 的
+   oracle 知識——**不要用那個數字調動態控制器**。
+
+## N9. 哪些 scratch 腳本支援 adaptive
+
+| 腳本 | adaptive | 預設 |
+|---|---|---|
+| `pedca_adaptive_11be.cc`（CBR，由 `pedca_verification_nsta_11be.cc` 複製） | ✅ | `--adaptive=1` |
+| `pedca_nsta_onoff_11be.cc` | ✅ | `--adaptive=0` |
+| `pedca_nsta_poisson_11be.cc` | ✅ | `--adaptive=0` |
+| `pedca_nsta_MMPP_11be.cc` | ✅ | `--adaptive=0` |
+| 其餘 ~16 個 | ❌ | — |
+
+三個 traffic-model 腳本的 `--adaptive` 預設是 **false**，且已用 git 原版建對照 binary
+實測 `--adaptive=0` 的 stdout 與 clog **逐位元相同**，既有 sweep 不受影響。
+
+---
 
 ## E0. What this layer is (and is NOT)
 

@@ -219,6 +219,7 @@ int main(int argc, char* argv[])
   uint32_t cwds = 0;          // P-EDCA Stage-1 CW (0=ASAP, 1=random[0,1], ...)
   uint32_t qsrc = 2;          // dot11PEDCARetryThreshold   (QSRC trigger threshold)
   uint32_t psrc = 1;          // dot11PEDCAConsecutiveAttempt (max consecutive P-EDCA attempts)
+  uint32_t dsctsRepeat = 2;   // DS-CTS frames per Stage-1 attempt (1=single, 2=dual)
   std::string clogFile = "scratch/pedca_stage2_stats.log";
 
   CommandLine cmd(__FILE__);
@@ -239,6 +240,7 @@ int main(int argc, char* argv[])
   cmd.AddValue("cwds","P-EDCA Stage-1 CW (0=ASAP, 1=random[0,1])", cwds);
   cmd.AddValue("qsrc","dot11PEDCARetryThreshold: QSRC must reach this to trigger P-EDCA", qsrc);
   cmd.AddValue("psrc","dot11PEDCAConsecutiveAttempt: max consecutive P-EDCA attempts", psrc);
+  cmd.AddValue("dsctsRepeat", "DS-CTS frames per Stage-1 attempt (1=single, 2=dual)", dsctsRepeat);
   cmd.AddValue("clogFile","Redirect std::clog to this file (empty = stderr)", clogFile);
   cmd.Parse(argc, argv);
 
@@ -369,6 +371,7 @@ int main(int argc, char* argv[])
           qFem->SetCwds(cwds);
           qFem->SetQsrc(static_cast<uint16_t>(qsrc));
           qFem->SetPsrc(static_cast<uint8_t>(psrc));
+          qFem->SetDsCtsRepeat(static_cast<uint8_t>(dsctsRepeat));
       }
   }
 

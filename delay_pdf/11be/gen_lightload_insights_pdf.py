@@ -7,6 +7,13 @@ Builds a 3-page deck (English + Traditional Chinese) from the current sweeps:
   fix_nsta30_CwdsxQSRCxPSRC_sweep/combo_percentile_summary_1Mbps.csv          (saturated = CBR 1 Mbps)
   <dir>/edca_only/edca_only_p00_vo_delay_pdf_nSta30_<rate>.csv                (EDCA-only VO P99)
 
+Data vintage (IMPORTANT): sweeps re-run 2026-08-02 on top of v6.4.1 "Dual DS-CTS mechanism" +
+the v6.3.3-v6.3.5 NAV/CF-End fixes. Stage 1 now sends the DS-CTS twice (SIFS apart) and Stage 2
+contends after SIFS instead of AIFS -- this is a DIFFERENT protocol from the single-DS-CTS data
+this deck previously reported (2026-07-19). Numbers and the QSRC/PSRC direction both changed;
+see scratch/delay_pdf/11be memory notes ("dual-dscts-findings", "pedca-adaptive-policy") for the
+full derivation. Do not average or compare these numbers against the pre-2026-07-28 deck.
+
 Perspective = P-EDCA STAs (delay_type 'pedca'), metric = P99 VO delay.
 Outputs (in this 11be/ dir):
   pedca_lightload_insights_en.pdf , pedca_lightload_insights.pdf
@@ -64,10 +71,12 @@ def analyse(rows, dt, n):
         g = {}
         for r in sub: g.setdefault(int(r[key]), []).append(float(r["P99_us"]) / 1000)
         return {k: sum(v) / len(v) for k, v in sorted(g.items())}
+    import statistics as st
     return dict(combo=f"c{best['CWds']} q{best['QSRC']} s{best['PSRC']}",
                 cwds=best["CWds"], qsrc=best["QSRC"], psrc=best["PSRC"],
                 P99=float(best["P99_us"]) / 1000,
                 byQ=marg("QSRC"), byS=marg("PSRC"),
+                med=st.median(float(r["P99_us"]) for r in sub) / 1000,
                 worst=max(float(r["P99_us"]) for r in sub) / 1000)
 
 D = {}; EDCA = {}
@@ -77,7 +86,13 @@ for key, label, csvp, bdir, rate, col in LOADS:
     EDCA[key] = edca_p99_ms(bdir, rate)
 
 def gain(key, n):
+    """positive = P-EDCA better than EDCA-only; negative = P-EDCA worse."""
     e = EDCA[key]; return (e - D[key][n]["P99"]) / e * 100 if e else 0
+
+# k-driven QSRC/PSRC law derived from the 2026-08-02 full CwdsxQSRCxPSRC rerun (see memory
+# "pedca-adaptive-policy"): CWds=1 fixed, QSRC scales up and PSRC scales down as k grows.
+def klaw(k):
+    return min(5, max(0, round(0.5 + 0.2 * k))), (3 if k <= 10 else (2 if k <= 22 else 1))
 
 # ───────────────────────── helpers ─────────────────────────
 def L(en, zh, lang): return zh if lang == "zh" else en
@@ -86,8 +101,8 @@ def wrap_lines(t, w, lang):
         ww = max(6, w // 2); return [t[i:i + ww] for i in range(0, len(t), ww)]
     return textwrap.wrap(t, width=w)
 def footer(fig, page, lang):
-    fig.text(0.045, 0.035, L("ns-3.45 P-EDCA light-load sweep | scratch/delay_pdf/11be | re-run on v6.3.2, 2026-07-19",
-                             "ns-3.45 P-EDCA 輕載掃描 | scratch/delay_pdf/11be | v6.3.2 重跑，2026-07-19", lang),
+    fig.text(0.045, 0.035, L("ns-3.45 P-EDCA light-load sweep | scratch/delay_pdf/11be | Dual DS-CTS (v6.4.1) re-run, 2026-08-02",
+                             "ns-3.45 P-EDCA 輕載掃描 | scratch/delay_pdf/11be | Dual DS-CTS(v6.4.1)重跑，2026-08-02", lang),
              fontsize=7.5, color=FAINT, va="center")
     fig.text(0.955, 0.035, f"{page} / 3", fontsize=7.5, color=FAINT, va="center", ha="right")
 def title_block(fig, t, s):
@@ -105,8 +120,8 @@ def card(fig, x, y, w, h, big, sub, small, bc=INK, bs=23):
 def page1(pdf, lang):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("P-EDCA under light load: best P99 parameters vs saturated load",
-          "輕載下的 P-EDCA：最佳 P99 參數組合與飽和負載之比較", lang),
+        L("P-EDCA under light load, Dual DS-CTS: fixes low-k timing, costs high-k airtime",
+          "輕載下的 P-EDCA(Dual DS-CTS)：修好了低滲透率的時序，卻在高滲透率付出空中時間代價", lang),
         L("802.11be, nSta=30, CWds×QSRC×PSRC sweep | offered load 0.1 / 0.5 / 1.0 Mbps per STA | P-EDCA STA P99",
           "802.11be，nSta=30，CWds×QSRC×PSRC 掃描 | 每 STA 負載 0.1 / 0.5 / 1.0 Mbps | P-EDCA STA P99", lang))
 
@@ -115,14 +130,14 @@ def page1(pdf, lang):
              fontsize=13, fontweight="bold", color=INK)
     reg = [
         (GREENL, L("0.1 Mbps — uncongested", "0.1 Mbps — 未壅塞", lang),
-         L(f"EDCA-only P99 = {EDCA['0.1']:.2f} ms (sub-ms). Nothing for P-EDCA to fix.",
-           f"純 EDCA P99 = {EDCA['0.1']:.2f} ms(次毫秒)。P-EDCA 無事可修。", lang)),
+         L(f"EDCA-only P99 = {EDCA['0.1']:.2f} ms (sub-ms). Little for P-EDCA to fix.",
+           f"純 EDCA P99 = {EDCA['0.1']:.2f} ms(次毫秒)。P-EDCA 幾乎無事可修。", lang)),
         (BLUE, L("0.5 Mbps — congested, not saturated", "0.5 Mbps — 壅塞但未飽和", lang),
-         L(f"EDCA-only P99 = {EDCA['0.5']:.2f} ms. Real queueing but the priority path can drain it.",
-           f"純 EDCA P99 = {EDCA['0.5']:.2f} ms。已有排隊，但優先路徑排得掉。", lang)),
+         L(f"EDCA-only P99 = {EDCA['0.5']:.2f} ms. Real queueing; whether P-EDCA helps now depends on k.",
+           f"純 EDCA P99 = {EDCA['0.5']:.2f} ms。已有排隊；P-EDCA 是否有幫助現在要看 k。", lang)),
         (ORANGE, L("1.0 Mbps — saturated", "1.0 Mbps — 飽和", lang),
-         L(f"EDCA-only P99 = {EDCA['1.0']:.2f} ms. Collision-feedback regime.",
-           f"純 EDCA P99 = {EDCA['1.0']:.2f} ms。碰撞回饋區間。", lang)),
+         L(f"EDCA-only P99 = {EDCA['1.0']:.2f} ms. Far lower than the pre-fix baseline (NAV/CF-End bugs fixed).",
+           f"純 EDCA P99 = {EDCA['1.0']:.2f} ms。遠低於修正前的基準(NAV/CF-End bug 已修)。", lang)),
     ]
     y = 0.745
     for col, h, b in reg:
@@ -132,33 +147,32 @@ def page1(pdf, lang):
         y -= 0.082
 
     card(fig, 0.60, 0.66, 0.35, 0.15,
-         L("0.1 Mbps: ≈ no-op", "0.1 Mbps：形同無作用", lang),
-         L("P-EDCA cuts P99 only +5–7%", "P-EDCA 只降 P99 +5–7%", lang),
-         L(f"best {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — any combo works (q0 even slightly worst)",
-           f"最佳 {D['0.1'][30]['P99']:.2f} ms vs EDCA {EDCA['0.1']:.2f} ms — 任何組合皆可(q0 反而略差)", lang), bc=GREEN)
+         L(f"0.1 Mbps: +{min(gain('0.1',n) for n in NPEDCAS):.0f}~+{max(gain('0.1',n) for n in NPEDCAS):.0f}%",
+           f"0.1 Mbps：+{min(gain('0.1',n) for n in NPEDCAS):.0f}~+{max(gain('0.1',n) for n in NPEDCAS):.0f}%", lang),
+         L("modest but consistently positive at every k", "每個 k 都有小幅正向增益", lang),
+         L(f"n=15 weakest (+{gain('0.1',15):.0f}%) — winning combo still drifts, params matter less here",
+           f"n=15 最弱(+{gain('0.1',15):.0f}%) — 最佳組合仍會飄移，代表參數在此不太重要", lang), bc=GREEN)
     card(fig, 0.60, 0.475, 0.35, 0.15,
-         L("0.5 Mbps: sweet spot", "0.5 Mbps：甜蜜點", lang),
-         L(f"+{gain('0.5',30):.0f}% P99 ({EDCA['0.5']:.1f} → {D['0.5'][30]['P99']:.1f} ms)",
-           f"+{gain('0.5',30):.0f}% P99({EDCA['0.5']:.1f} → {D['0.5'][30]['P99']:.1f} ms)", lang),
-         L(f"QSRC=0, PSRC=3 — monotonic; worst combo ≤ {max(D['0.5'][n]['worst'] for n in NPEDCAS):.0f} ms",
-           f"QSRC=0、PSRC=3 — 單調；最差組合 ≤ {max(D['0.5'][n]['worst'] for n in NPEDCAS):.0f} ms", lang), bc=GREEN)
+         L("0.5 & 1.0 Mbps: sign flips at n=30", "0.5、1.0 Mbps：n=30 時符號翻轉", lang),
+         L(f"n=5 +{gain('0.5',5):.0f}%/+{gain('1.0',5):.0f}%  →  n=30 {gain('0.5',30):+.1f}%/{gain('1.0',30):+.1f}%",
+           f"n=5 +{gain('0.5',5):.0f}%/+{gain('1.0',5):.0f}%  →  n=30 {gain('0.5',30):+.1f}%/{gain('1.0',30):+.1f}%", lang),
+         L("full penetration: P-EDCA now COSTS more than it saves", "全滲透時：P-EDCA 現在花費比它省下的還多", lang), bc=RED)
     card(fig, 0.60, 0.29, 0.35, 0.15,
-         L("One recipe at every load", "各負載同一配方", lang),
-         L("QSRC = 0,  PSRC = 3,  CWds = 0/1", "QSRC = 0、PSRC = 3、CWds = 0/1", lang),
-         L("now wins at saturation too — the old n=5 tail blow-up is gone (v6.3.x fixes)",
-           "飽和時同樣勝出 — 舊的 n=5 尾端爆炸已消失(v6.3.x 修正)", lang), bs=18)
+         L("Recipe must now scale with k", "配方現在必須隨 k 調整", lang),
+         L("QSRC rises, PSRC falls as k grows (opposite of pre-Dual)", "k 越大 QSRC 越大、PSRC 越小(跟 Dual 之前相反)", lang),
+         L("one fixed combo can't cover k=5..30 any more", "單一固定組合已無法涵蓋 k=5~30", lang), bs=18)
 
     ax = fig.add_axes([0.045, 0.10, 0.52, 0.15]); ax.axis("off")
-    ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.03",
+    ax.add_patch(FancyBboxPatch((0.0, 0.0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.03",
                  fc="#FAFAF9", ec=CARDBD, lw=1, transform=ax.transAxes))
     ax.text(0.04, 0.80, L("One-line takeaway", "一句話結論", lang), fontsize=11, fontweight="bold",
             color=INK, transform=ax.transAxes)
-    ax.text(0.04, 0.40, L(f"P-EDCA's value tracks how congested EDCA already is: near-zero at 0.1 Mbps,\n"
-                          f"+{gain('0.5',30):.0f}% at 0.5 Mbps and +{gain('1.0',30):.0f}% at saturation (n=30). The aggressive\n"
-                          f"recipe (QSRC 0, PSRC 3) wins at every load with real queueing — no tail risk left.",
-                          f"P-EDCA 的價值取決於 EDCA 本身有多壅塞：0.1 Mbps 幾乎為零、\n"
-                          f"0.5 Mbps +{gain('0.5',30):.0f}%、飽和 +{gain('1.0',30):.0f}%(n=30)。只要有實質排隊，\n"
-                          f"積極配方(QSRC 0、PSRC 3)在每種負載都勝出 — 尾端風險已不存在。", lang),
+    ax.text(0.04, 0.40, L("Dual DS-CTS fixed the old low-k timing-miss failure, so P-EDCA now helps at k=5-15\n"
+                          "everywhere. But the DS-CTS reservation is exclusive (one window, one transmitter),\n"
+                          "so cost scales with k while benefit doesn't -- at k=30 it now costs more than it saves.",
+                          "Dual DS-CTS 修好了舊版低滲透率下的時序失誤，P-EDCA 在 k=5-15 現在到處都有幫助。\n"
+                          "但 DS-CTS 保留是排他性的(一個窗口只服務一個傳送者)，成本隨 k 增加、效益卻沒有，\n"
+                          "k=30 時現在反而得不償失。", lang),
             fontsize=9.4, color="#333", va="center", linespacing=1.5, transform=ax.transAxes)
     footer(fig, 1, lang); pdf.savefig(fig); plt.close(fig)
 
@@ -166,27 +180,29 @@ def page1(pdf, lang):
 def page2(pdf, lang):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Best P-EDCA P99 across loads — the gain peaks at moderate load",
-          "各負載下最佳 P-EDCA P99 — 增益在中等負載達到高峰", lang),
-        L("EDCA-only baseline vs best-of-36-combos P-EDCA (P-EDCA STAs, n=30), with % P99 reduction",
-          "純 EDCA 基準 vs 36 組合最佳 P-EDCA(P-EDCA STA，n=30)，標示 P99 降幅", lang))
+        L("Best P-EDCA P99 across loads — gain peaks at low-moderate penetration",
+          "各負載下最佳 P-EDCA P99 — 增益現在於低~中滲透率達到高峰", lang),
+        L("EDCA-only baseline vs best-of-36-combos P-EDCA (P-EDCA STAs, n=5), with % P99 change",
+          "純 EDCA 基準 vs 36 組合最佳 P-EDCA(P-EDCA STA，n=5)，標示 P99 變化", lang))
 
     ax = fig.add_axes([0.07, 0.40, 0.42, 0.42])
     xs = range(len(LOADS))
     base = [EDCA[k] for k, *_ in LOADS]
-    best = [D[k][30]["P99"] for k, *_ in LOADS]
+    best = [D[k][5]["P99"] for k, *_ in LOADS]
     ax.bar([x - 0.2 for x in xs], base, 0.4, color=GREY, label=L("EDCA-only", "純 EDCA", lang))
-    ax.bar([x + 0.2 for x in xs], best, 0.4, color=[c for *_, c in LOADS], label=L("best P-EDCA", "最佳 P-EDCA", lang))
+    ax.bar([x + 0.2 for x in xs], best, 0.4, color=[c for *_, c in LOADS], label=L("best P-EDCA (n=5)", "最佳 P-EDCA(n=5)", lang))
     for i, (k, *_ ) in enumerate(LOADS):
-        ax.text(i + 0.2, best[i] + 0.4, f"−{gain(k,30):.0f}%", ha="center", fontsize=10,
-                fontweight="bold", color=GREEN)
-        ax.text(i - 0.2, base[i] + 0.4, f"{base[i]:.1f}", ha="center", fontsize=8, color=MUTED)
+        g = gain(k, 5)
+        lbl = f"+{g:.0f}%" if g >= 0 else f"{g:.0f}%"
+        ax.text(i + 0.2, best[i] + max(base) * 0.02, lbl, ha="center", fontsize=10,
+                fontweight="bold", color=(GREEN if g >= 0 else RED))
+        ax.text(i - 0.2, base[i] + max(base) * 0.02, f"{base[i]:.1f}", ha="center", fontsize=8, color=MUTED)
     ax.set_xticks(list(xs)); ax.set_xticklabels([lbl for _, lbl, *_ in LOADS], fontsize=9)
     ax.set_ylabel(L("VO P99 delay (ms)", "VO P99 延遲 (ms)", lang), fontsize=10)
-    ax.set_title(L("P99: EDCA-only vs best P-EDCA (n=30)", "P99：純 EDCA vs 最佳 P-EDCA(n=30)", lang),
+    ax.set_title(L("P99: EDCA-only vs best P-EDCA (n=5)", "P99：純 EDCA vs 最佳 P-EDCA(n=5)", lang),
                  fontsize=11.5, fontweight="bold", color=INK)
     ax.legend(fontsize=9, frameon=False); ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", alpha=0.25); ax.set_ylim(0, max(base) * 1.15)
+    ax.grid(axis="y", alpha=0.25); ax.set_ylim(0, max(base + best) * 1.2)
 
     # detail table (load × nPedca)
     fig.text(0.56, 0.79, L("Best combo & P99 per P-EDCA population",
@@ -199,31 +215,33 @@ def page2(pdf, lang):
     for k, lbl, *_ in LOADS:
         col = [c for kk, _, _, _, _, c in LOADS if kk == k][0]
         for j, n in enumerate(NPEDCAS):
-            a = D[k][n]
+            a = D[k][n]; g = gain(k, n)
             fig.text(cx[0], y, lbl if j == 0 else "", fontsize=8.6, color=col, fontweight="bold")
             fig.text(cx[1], y, f"{n}", fontsize=8.6, color="#333")
             fig.text(cx[2], y, a["combo"], fontsize=8.6, color="#333")
-            fig.text(cx[3], y, f"{a['P99']:.2f}  (−{gain(k,n):.0f}%)", fontsize=8.6, color="#333")
+            fig.text(cx[3], y, f"{a['P99']:.2f}  ({g:+.0f}%)", fontsize=8.6,
+                     color=(INK if g >= 0 else RED))
             y -= 0.028
         y -= 0.010
 
     bullets = [
-        L(f"Relative gain grows with congestion: +5–7% at 0.1 Mbps → +{gain('0.5',30):.0f}% at 0.5 Mbps → "
-          f"+{gain('1.0',30):.0f}% at saturation (n=30). P-EDCA only helps once EDCA itself is congested.",
-          f"相對增益隨壅塞增加：0.1 Mbps 僅 +5–7% → 0.5 Mbps +{gain('0.5',30):.0f}% → "
-          f"飽和 +{gain('1.0',30):.0f}%(n=30)。EDCA 本身壅塞後 P-EDCA 才有用。", lang),
-        L(f"At 0.1 Mbps the best P99 ({D['0.1'][30]['P99']:.2f} ms) barely beats EDCA ({EDCA['0.1']:.2f} ms) and the "
-          f"winning combo drifts across nPedca ({D['0.1'][5]['combo']} / {D['0.1'][15]['combo']} / {D['0.1'][30]['combo']}) "
-          f"— a sign params don't matter when uncongested.",
-          f"0.1 Mbps 下最佳 P99({D['0.1'][30]['P99']:.2f} ms)幾乎追平 EDCA({EDCA['0.1']:.2f} ms)，"
-          f"且最佳組合隨 nPedca 飄移({D['0.1'][5]['combo']} / {D['0.1'][15]['combo']} / {D['0.1'][30]['combo']})— "
-          f"代表未壅塞時參數不重要。", lang),
-        L(f"At 0.5 & 1.0 Mbps the winner is consistently aggressive (QSRC 0–1, PSRC 3), and the gain RISES with "
-          f"penetration: 0.5 Mbps +{gain('0.5',5):.0f}% → +{gain('0.5',15):.0f}% → +{gain('0.5',30):.0f}%; "
-          f"saturation +{gain('1.0',5):.0f}% / +{gain('1.0',15):.0f}% / +{gain('1.0',30):.0f}% (n=5/15/30).",
-          f"0.5 與 1.0 Mbps 下最佳者一致偏積極(QSRC 0–1、PSRC 3)，且增益隨滲透率上升：0.5 Mbps "
-          f"+{gain('0.5',5):.0f}% → +{gain('0.5',15):.0f}% → +{gain('0.5',30):.0f}%；"
-          f"飽和 +{gain('1.0',5):.0f}% / +{gain('1.0',15):.0f}% / +{gain('1.0',30):.0f}%(n=5/15/30)。", lang),
+        L(f"Gain no longer rises monotonically with penetration -- it PEAKS at low-moderate k and "
+          f"reverses at full penetration: 0.5 Mbps +{gain('0.5',5):.0f}% (n=5) → +{gain('0.5',15):.0f}% (n=15) "
+          f"→ {gain('0.5',30):+.1f}% (n=30); 1.0 Mbps +{gain('1.0',5):.0f}% → +{gain('1.0',15):.0f}% → {gain('1.0',30):+.1f}%.",
+          f"增益不再隨滲透率單調上升 -- 而是在低~中 k 達到高峰、全滲透時翻負：0.5 Mbps "
+          f"+{gain('0.5',5):.0f}%(n=5) → +{gain('0.5',15):.0f}%(n=15) → {gain('0.5',30):+.1f}%(n=30)；"
+          f"1.0 Mbps +{gain('1.0',5):.0f}% → +{gain('1.0',15):.0f}% → {gain('1.0',30):+.1f}%。", lang),
+        L("Why: the DS-CTS reservation is exclusive -- one protected window serves exactly one "
+          "transmitter, but every P-EDCA STA pays the DS-CTS airtime cost to compete for it. Benefit "
+          "per STA scales ~1/k while cost scales ~k, so net value crosses zero as k grows.",
+          "原因：DS-CTS 保留是排他性的 -- 一個受保護窗口只服務一個傳送者，但每個 P-EDCA STA 都要付出 "
+          "DS-CTS 空中時間成本去競爭它。每個 STA 的效益隨 k 遞減(~1/k)、成本卻隨 k 遞增(~k)，"
+          "淨值因此隨 k 增加而穿越零點。", lang),
+        L(f"At 0.1 Mbps gain stays small and positive at every k (+{min(gain('0.1',n) for n in NPEDCAS):.0f}"
+          f"~+{max(gain('0.1',n) for n in NPEDCAS):.0f}%) -- uncongested traffic never reaches the "
+          f"exclusivity bottleneck, so the reservation cost stays affordable.",
+          f"0.1 Mbps 下增益在每個 k 都維持小幅正值(+{min(gain('0.1',n) for n in NPEDCAS):.0f}~"
+          f"+{max(gain('0.1',n) for n in NPEDCAS):.0f}%) -- 未壅塞流量從未觸及排他性瓶頸，保留成本仍能負擔。", lang),
     ]
     y = 0.315
     for b in bullets:
@@ -237,8 +255,8 @@ def page2(pdf, lang):
 def page3(pdf, lang):
     fig = plt.figure(figsize=(13.33, 7.5)); fig.patch.set_facecolor("white")
     title_block(fig,
-        L("Which knob matters at which load — and where the old tail-risk went",
-          "哪個旋鈕在哪種負載重要 — 以及舊的尾端風險去哪了", lang),
+        L("Which knob matters at which k — QSRC and PSRC reversed direction",
+          "哪個旋鈕在哪個 k 重要 — QSRC 與 PSRC 現在的方向跟以前相反", lang),
         L("Marginal mean P99 (P-EDCA STAs, n=30) vs QSRC and vs PSRC, per load",
           "各負載下邊際平均 P99(P-EDCA STA，n=30)對 QSRC 及 PSRC 的關係", lang))
 
@@ -251,53 +269,51 @@ def page3(pdf, lang):
         if idx == 0:
             ax.set_ylabel(L("mean P99 (ms)", "平均 P99 (ms)", lang), fontsize=10)
             ax.legend(fontsize=8.2, frameon=False)
-        ax.set_title(L(f"P99 vs {knob}", f"P99 對 {knob}", lang), fontsize=11, fontweight="bold", color=INK)
+        ax.set_title(L(f"P99 vs {knob} (n=30)", f"P99 對 {knob}(n=30)", lang), fontsize=11, fontweight="bold", color=INK)
         ax.set_xticks(list(D["0.5"][30][key].keys()))
         ax.spines[["top", "right"]].set_visible(False); ax.grid(alpha=0.25); ax.tick_params(labelsize=8)
 
-    # worst-case callout (the old blow-up no longer reproduces)
+    # k-driven recipe callout (replaces the old "tail blow-up gone" box -- that pathology no
+    # longer applies; the live issue now is the exclusivity cost documented on page 2)
     ax = fig.add_axes([0.70, 0.44, 0.26, 0.36]); ax.axis("off")
     ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.04",
-                 fc="#F1F7F1", ec="#C6DEC6", lw=1, transform=ax.transAxes))
-    ax.text(0.5, 0.90, L("Tail blow-up: gone", "尾端爆炸：已消失", lang), ha="center", fontsize=11.5,
-            fontweight="bold", color=GREEN, transform=ax.transAxes)
-    w05 = max(D["0.5"][n]["worst"] for n in NPEDCAS)
-    w10 = max(D["1.0"][n]["worst"] for n in NPEDCAS)
-    ax.text(0.5, 0.62, L("worst-case P99 over 36 combos", "36 組合中最差 P99", lang),
-            ha="center", fontsize=9, color=INK, transform=ax.transAxes)
-    ax.text(0.5, 0.47, f"0.1: {max(D['0.1'][n]['worst'] for n in NPEDCAS):.1f} ms   "
-                       f"0.5: {w05:.0f} ms   1.0: {w10:.0f} ms", ha="center", fontsize=9.5, color=INK,
-            transform=ax.transAxes)
-    ax.text(0.5, 0.30, L("worst ≈ EDCA-only baseline\n(= no benefit, never a blow-up)",
-                         "最差 ≈ 純 EDCA 基準\n(= 沒有好處，但不會爆掉)", lang),
-            ha="center", fontsize=9.5, fontweight="bold", color=INK, transform=ax.transAxes)
-    ax.text(0.5, 0.10, L("the pre-v6.3 294 ms n=5 blow-up no longer\nreproduces after the NAV/FEM fixes",
-                         "v6.3 之前的 294 ms(n=5)爆炸\n在 NAV/FEM 修正後不再重現", lang),
-            ha="center", fontsize=8, color=MUTED, transform=ax.transAxes)
+                 fc="#F1F5FA", ec="#C9D9EA", lw=1, transform=ax.transAxes))
+    ax.text(0.5, 0.92, L("k-driven recipe", "k-驅動配方", lang), ha="center", fontsize=11.5,
+            fontweight="bold", color=INK, transform=ax.transAxes)
+    ax.text(0.5, 0.78, L("CWds = 1 fixed; QSRC/PSRC scale with k", "CWds=1 固定；QSRC/PSRC 隨 k 調整", lang),
+            ha="center", fontsize=8.3, color=MUTED, transform=ax.transAxes)
+    yy = 0.63
+    for k in NPEDCAS:
+        q, s = klaw(k)
+        ax.text(0.5, yy, f"k={k:<2d}  ->  QSRC={q}, PSRC={s}", ha="center", fontsize=9.7,
+                fontweight="bold", color=INK, transform=ax.transAxes)
+        yy -= 0.135
+    ax.text(0.5, 0.10, L("law: QSRC=round(0.5+0.2k), PSRC=3/2/1\nfor k<=10 / <=22 / >22",
+                         "公式：QSRC=round(0.5+0.2k)，\nPSRC=3/2/1 對應 k<=10/<=22/>22", lang),
+            ha="center", fontsize=7.6, color=MUTED, transform=ax.transAxes)
 
     bullets = [
-        L(f"QSRC: at 0.1 Mbps a shallow reverse-U (q0 is mildly the WORST, {D['0.1'][30]['byQ'][0]:.1f} vs "
-          f"{D['0.1'][30]['byQ'][2]:.1f} ms at q2 — don't trigger P-EDCA when uncongested); at 0.5 Mbps strongly "
-          f"monotonic (q0 {D['0.5'][30]['byQ'][0]:.1f} ms vs q5 {D['0.5'][30]['byQ'][5]:.1f} ms); at 1.0 Mbps "
-          f"now ALSO monotonic (q0 {D['1.0'][30]['byQ'][0]:.1f} ms vs q5 {D['1.0'][30]['byQ'][5]:.1f} ms).",
-          f"QSRC：0.1 Mbps 呈淺淺的倒 U(q0 反而最差，{D['0.1'][30]['byQ'][0]:.1f} vs q2 {D['0.1'][30]['byQ'][2]:.1f} ms — "
-          f"未壅塞時別觸發 P-EDCA)；0.5 Mbps 強烈單調(q0 {D['0.5'][30]['byQ'][0]:.1f} ms vs q5 "
-          f"{D['0.5'][30]['byQ'][5]:.1f} ms)；1.0 Mbps 現在也單調(q0 {D['1.0'][30]['byQ'][0]:.1f} ms vs q5 "
-          f"{D['1.0'][30]['byQ'][5]:.1f} ms)。", lang),
-        L(f"PSRC: irrelevant at 0.1 Mbps; clearly larger-is-better at 0.5 Mbps "
-          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms) and at saturation "
-          f"(s3 {D['1.0'][30]['byS'][3]:.1f} ms vs s1 {D['1.0'][30]['byS'][1]:.1f} ms) — with the v6.3.x fixes "
-          f"PSRC=3 no longer carries any blow-up risk.",
-          f"PSRC：0.1 Mbps 無關緊要；0.5 Mbps 明顯越大越好"
-          f"(s3 {D['0.5'][30]['byS'][3]:.1f} ms vs s1 {D['0.5'][30]['byS'][1]:.1f} ms)，"
-          f"飽和亦然(s3 {D['1.0'][30]['byS'][3]:.1f} ms vs s1 {D['1.0'][30]['byS'][1]:.1f} ms) — "
-          f"v6.3.x 修正後 PSRC=3 不再有爆炸風險。", lang),
-        L(f"Robust recommendation — one recipe at every load with real queueing: QSRC=0, PSRC=3, CWds=0/1 "
-          f"(worst-case ≤ {w05:.0f} ms at 0.5 Mbps, ≤ {w10:.0f} ms at saturation ≈ the EDCA-only baseline). "
-          f"At 0.1 Mbps simply leave P-EDCA untriggered (large QSRC) — there is nothing to gain.",
-          f"穩健建議 — 只要有實質排隊，各負載同一配方：QSRC=0、PSRC=3、CWds=0/1"
-          f"(最差 ≤ {w05:.0f} ms @0.5 Mbps、≤ {w10:.0f} ms @飽和 ≈ 純 EDCA 基準)。"
-          f"0.1 Mbps 則讓 P-EDCA 不觸發(大 QSRC)即可 — 沒有可得的增益。", lang),
+        L(f"QSRC direction REVERSED from the pre-Dual deck: at n=30, LOW QSRC is now worst "
+          f"(q0 {D['0.5'][30]['byQ'][0]:.1f} ms) and HIGH QSRC is best (q5 {D['0.5'][30]['byQ'][5]:.1f} ms) "
+          f"at 0.5 Mbps -- q0 keeps every STA retrying into the exclusive window; higher QSRC filters "
+          f"out most of the excess demand before it pays the DS-CTS cost.",
+          f"QSRC 方向跟 Dual 之前的版本相反：0.5 Mbps 在 n=30 時，低 QSRC 現在反而最差"
+          f"(q0 {D['0.5'][30]['byQ'][0]:.1f} ms)、高 QSRC 最好(q5 {D['0.5'][30]['byQ'][5]:.1f} ms) -- "
+          f"q0 讓每個 STA 都不斷重試搶那個排他窗口；QSRC 較高則能在付出 DS-CTS 成本前先篩掉多餘需求。", lang),
+        L(f"PSRC direction also reversed at high k: s1 {D['0.5'][30]['byS'][1]:.1f} ms now beats "
+          f"s3 {D['0.5'][30]['byS'][3]:.1f} ms at n=30 -- fewer consecutive attempts per winner leaves "
+          f"more of the shared airtime for everyone else. At n=5 the OLD direction still holds "
+          f"(PSRC=3 better) since exclusivity barely bites when only 5 STAs compete.",
+          f"高 k 時 PSRC 方向也反過來了：n=30 時 s1 {D['0.5'][30]['byS'][1]:.1f} ms 現在贏過 "
+          f"s3 {D['0.5'][30]['byS'][3]:.1f} ms -- 贏家連續嘗試次數變少，留給其他人的共用空中時間變多。"
+          f"n=5 時舊方向仍成立(PSRC=3 較好)，因為只有 5 個 STA 競爭時排他性幾乎不構成問題。", lang),
+        L("Recommendation: stop using one fixed combo. Estimate k (number of STAs actually using "
+          "P-EDCA) and apply the k-driven law above; getting k badly wrong costs more than getting "
+          "traffic type wrong (see memory \"pedca-adaptive-policy\" for the full cost table and the "
+          "closed-loop controller that automates this).",
+          "建議：不要再用單一固定組合。估計 k(實際使用 P-EDCA 的 STA 數)並套用上方 k-驅動公式；"
+          "k 估錯的代價比流量型態估錯還大(完整成本表與自動化此流程的閉環控制器見 memory "
+          "「pedca-adaptive-policy」)。", lang),
     ]
     y = 0.335
     for b in bullets:

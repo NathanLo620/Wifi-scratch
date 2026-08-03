@@ -46,7 +46,10 @@ static std::ofstream g_trajCsv;
 
 static void
 ControlStepTrace(Time now,
+                 uint32_t kHat,
                  uint8_t cwds,
+                 uint8_t qsrc,
+                 uint8_t psrc,
                  uint32_t nAggressive,
                  uint32_t nConservative,
                  uint32_t nUnchanged,
@@ -63,10 +66,11 @@ ControlStepTrace(Time now,
     {
         return;
     }
-    g_trajCsv << now.GetSeconds() << "," << +cwds << "," << nAggressive << "," << nConservative
-              << "," << nUnchanged << "," << busyFrac << "," << collRate << "," << collRateFrame
-              << "," << dsCtsFrames << "," << dsCtsBursts << "," << bsrSum << "," << lliCount
-              << "," << (changed ? 1 : 0) << "\n";
+    g_trajCsv << now.GetSeconds() << "," << kHat << "," << +cwds << "," << +qsrc << "," << +psrc
+              << "," << nAggressive << "," << nConservative << "," << nUnchanged << "," << busyFrac
+              << "," << collRate << "," << collRateFrame << "," << dsCtsFrames << ","
+              << dsCtsBursts << "," << bsrSum << "," << lliCount << "," << (changed ? 1 : 0)
+              << "\n";
 }
 
 static double g_apIdleUs = 0;
@@ -255,6 +259,13 @@ int main(int argc, char* argv[])
 
   // ── Adaptive P-EDCA closed loop ──
   bool     adaptive = true;         // create the AP-side controller at all
+  std::string policy = "kdriven";   // kdriven | v2 | fixed
+  int32_t  kOverride = -1;          // force the P-EDCA STA count instead of estimating it
+  double   qsrcIntercept = 0.5;     // QSRC = clamp(round(intercept + slope*k), 0, 5)
+  double   qsrcSlope = 0.2;
+  uint32_t cwdsKDriven = 1;         // CWds the k-driven law advertises
+  uint32_t psrc3MaxK = 10;          // largest k that still gets PSRC 3
+  uint32_t psrc2MaxK = 22;          // largest k that still gets PSRC 2
   uint32_t controlPeriodMs = 100;   // controller period
   double   delayBoundMs = 10.0;     // AC_VO delay budget the LLI trigger measures against
   double   lliFraction = 0.7;       // fraction of that budget beyond which LLI fires
@@ -297,6 +308,21 @@ int main(int argc, char* argv[])
   cmd.AddValue("clogFile","Redirect std::clog to this file (empty = stderr)", clogFile);
   cmd.AddValue("warmupTime","Start of the measurement window (seconds)", warmupTime);
   cmd.AddValue("adaptive","Run the AP-side P-EDCA controller (0 = plain static P-EDCA)", adaptive);
+  cmd.AddValue("policy",
+               "Controller rule set: kdriven (theta from the estimated P-EDCA STA count, fitted "
+               "to the 2026-08-01 sweeps), v2 (collision/busy/per-STA rules), fixed (push the "
+               "seed theta unchanged, i.e. mechanism on but loop off)",
+               policy);
+  cmd.AddValue("kOverride",
+               "Force the number of P-EDCA STAs the controller assumes, instead of estimating it "
+               "from LLI evidence. Negative = estimate. Set it to the true count to measure the "
+               "policy independently of the estimator.",
+               kOverride);
+  cmd.AddValue("qsrcIntercept","Intercept of the k-driven QSRC law", qsrcIntercept);
+  cmd.AddValue("qsrcSlope","Slope per P-EDCA STA of the k-driven QSRC law", qsrcSlope);
+  cmd.AddValue("cwdsKDriven","CWds advertised by the k-driven policy", cwdsKDriven);
+  cmd.AddValue("psrc3MaxK","Largest k that still receives PSRC 3", psrc3MaxK);
+  cmd.AddValue("psrc2MaxK","Largest k that still receives PSRC 2", psrc2MaxK);
   cmd.AddValue("controlPeriodMs","Controller period in milliseconds", controlPeriodMs);
   cmd.AddValue("ctrlStart",
                "When the controller starts observing, in seconds; negative means warmupTime. "
@@ -482,6 +508,13 @@ int main(int argc, char* argv[])
   if (adaptive)
   {
       pedcaController = CreateObject<PedcaController>();
+      pedcaController->SetAttribute("Policy", StringValue(policy));
+      pedcaController->SetAttribute("KOverride", IntegerValue(kOverride));
+      pedcaController->SetAttribute("QsrcIntercept", DoubleValue(qsrcIntercept));
+      pedcaController->SetAttribute("QsrcSlope", DoubleValue(qsrcSlope));
+      pedcaController->SetAttribute("CwdsKDriven", UintegerValue(cwdsKDriven));
+      pedcaController->SetAttribute("Psrc3MaxK", UintegerValue(psrc3MaxK));
+      pedcaController->SetAttribute("Psrc2MaxK", UintegerValue(psrc2MaxK));
       pedcaController->SetAttribute("Period", TimeValue(MilliSeconds(controlPeriodMs)));
       pedcaController->SetAttribute("BusyHigh", DoubleValue(busyHigh));
       pedcaController->SetAttribute("CollHigh", DoubleValue(collHigh));
@@ -504,9 +537,9 @@ int main(int argc, char* argv[])
           g_trajCsv.open(trajOutput, std::ios::out | std::ios::trunc);
           if (g_trajCsv.is_open())
           {
-              g_trajCsv << "time_s,cwds,n_aggressive,n_conservative,n_unchanged,busy_frac,"
-                           "coll_rate,coll_rate_frame,dscts_frames,dscts_bursts,bsr_sum,"
-                           "lli_count,changed\n";
+              g_trajCsv << "time_s,k_hat,cwds,qsrc,psrc,n_aggressive,n_conservative,"
+                           "n_unchanged,busy_frac,coll_rate,coll_rate_frame,dscts_frames,"
+                           "dscts_bursts,bsr_sum,lli_count,changed\n";
               pedcaController->TraceConnectWithoutContext("ControlStep",
                                                           MakeCallback(&ControlStepTrace));
           }
@@ -1011,7 +1044,9 @@ int main(int argc, char* argv[])
     }
     if (pedcaController)
     {
-        std::cout << "  Controller steps: " << pedcaController->GetStepCount() << "\n";
+        std::cout << "  Controller: policy=" << policy << " steps="
+                  << pedcaController->GetStepCount() << "  true nPedca=" << nPedcaSta
+                  << " (grep '\\[P-EDCA CTRL\\]' in the clog for the estimated kHat)\n";
     }
   }
 
