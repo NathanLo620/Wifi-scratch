@@ -1,0 +1,58 @@
+============================================================================================================
+  P-EDCA STA DELAY REDUCTION  (negative % = improvement)
+  reference A = same mode at DEFAULT param CWds=0/QSRC=2/PSRC=1
+  reference B = EDCA-only baseline  (P95=10142us  P99=13748us)
+============================================================================================================
+
+  CAUTION: percentiles are conditioned on DELIVERED packets. A config that
+  drops more packets loses its slowest samples, which flatters its P95/P99.
+  Always read these next to the loss column.
+  'best' is the winner FOR THAT nPedca, chosen independently per load,
+  so the parameter set legitimately changes from row to row.
+
+  mode      param                nPedca |     P95   vs dflt   vs EDCA |     P99   vs dflt   vs EDCA |   loss%
+  -----------------------------------------------------------------------------------------------------------
+  mono-DS   default c0_q02_s01        5 |    9932      0.0%     -2.1% |   13888      0.0%      1.0% |   11.95
+  mono-DS   default c0_q02_s01       15 |   10142      0.0%      0.0% |   13942      0.0%      1.4% |   12.23
+  mono-DS   default c0_q02_s01       30 |   10258      0.0%      1.1% |   13952      0.0%      1.5% |   14.31
+  mono-DS   best c1_q01_s01           5 |    9972      0.4%     -1.7% |   13602     -2.1%     -1.1% |   13.01
+  mono-DS   best c1_q01_s01          15 |   10038     -1.0%     -1.0% |   13658     -2.0%     -0.7% |   13.32
+  mono-DS   best c0_q01_s02          30 |   10132     -1.2%     -0.1% |   13628     -2.3%     -0.9% |   15.61
+
+  dual-DS   default c0_q02_s01        5 |    7048      0.0%    -30.5% |   11892      0.0%    -13.5% |    5.94
+  dual-DS   default c0_q02_s01       15 |    8892      0.0%    -12.3% |   13852      0.0%      0.8% |    9.66
+  dual-DS   default c0_q02_s01       30 |   10638      0.0%      4.9% |   15358      0.0%     11.7% |   14.29
+  dual-DS   best c1_q01_s03           5 |    4308    -38.9%    -57.5% |    6828    -42.6%    -50.3% |    1.59
+  dual-DS   best c1_q03_s03          15 |    9128      2.6%    -10.0% |   12202    -11.9%    -11.2% |    3.81
+  dual-DS   best c0_q04_s01          30 |   10768      1.2%      6.2% |   14598     -4.9%      6.2% |    9.70
+
+============================================================================================================
+  P-EDCA STAGE-1 / STAGE-2 FUNNEL   (counts per 10s sim, averaged over 10 runs)
+============================================================================================================
+
+  DS-CTS   = Stage-1 attempts (one per DS-CTS burst, not per frame)
+  S2 TX    = Stage-2 payload transmissions that actually STARTED
+  S2TX/DS  = fraction of Stage-1 attempts that converted into a Stage-2 TX
+  noCTS    = P-EDCA Fail RTS No CTS  (NAV/protection never established)
+
+  mode      param                nPedca   DS-CTS  S2enter    S2 TX  S2TX/DS  success  succ/DS   noCTS  noCTS/DS   loss%
+  ---------------------------------------------------------------------------------------------------------------------
+  mono-DS   default c0_q02_s01        5     1159     1159      413    35.6%      273    23.6%     129     11.1%   11.95
+  mono-DS   default c0_q02_s01       15     3585     3585     1262    35.2%      808    22.5%     419     11.7%   12.23
+  mono-DS   default c0_q02_s01       30     7137     7137     2343    32.8%     1398    19.6%     878     12.3%   14.31
+  mono-DS   best c1_q01_s01           5     1724     1724      614    35.6%      409    23.7%     202     11.7%   13.01
+  mono-DS   best c1_q01_s01          15     5009     5009     1720    34.3%     1106    22.1%     602     12.0%   13.32
+  mono-DS   best c0_q01_s02          30    18052    18052     5270    29.2%     2872    15.9%    2345     13.0%   15.61
+
+  dual-DS   default c0_q02_s01        5     1660     1660     1363    82.1%     1321    79.5%      38      2.3%    5.94
+  dual-DS   default c0_q02_s01       15     4636     4636     3398    73.3%     3191    68.8%     190      4.1%    9.66
+  dual-DS   default c0_q02_s01       30     8500     8500     5522    65.0%     4962    58.4%     515      6.1%   14.29
+  dual-DS   best c1_q01_s03           5     3774     3774     2873    76.1%     2734    72.4%     136      3.6%    1.59
+  dual-DS   best c1_q03_s03          15     6621     6621     4456    67.3%     4063    61.4%     306      4.6%    3.81
+  dual-DS   best c0_q04_s01          30     5066     5066     3560    70.3%     3291    65.0%     196      3.9%    9.70
+
+  NOTE: 'P-EDCA Fail Timing Expired' is 0 everywhere by construction — the
+  NAV-window-expired branch in qos-frame-exchange-manager.cc still counts the
+  attempt as a Stage-2 TX start and lets it continue, so that counter is inert.
+  Use the S2TX/DS conversion rate instead to see Stage-2 access failures.
+

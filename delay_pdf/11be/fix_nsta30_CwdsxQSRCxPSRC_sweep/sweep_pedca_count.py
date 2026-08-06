@@ -57,7 +57,8 @@ SIM_BINARY      = "scratch/pedca_verification_nsta_11be.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
-OUT_DIR = Path(__file__).resolve().parent
+BASE_OUT_DIR = Path(__file__).resolve().parent
+OUT_DIR = BASE_OUT_DIR   # reassigned in main() to BASE_OUT_DIR/mono-DS or /dual-DS
 NS3_DIR = Path(
     os.environ.get("NS3_DIR", str(Path(__file__).resolve().parents[4]))
 ).resolve()
@@ -92,6 +93,13 @@ CURRENT_QSRC: int = 0
 CURRENT_PSRC: int = 1
 BASELINE_MODE: bool = False     # while True, tag/dir resolve to the EDCA-only subdir
 BASELINE_TAG  = "edca_only"
+DSCTS_REPEAT: int = 2            # 1 = mono-DS (single DS-CTS), 2 = dual-DS (default, matches cc default)
+DS_MODE_DIRNAME = {1: "mono-DS", 2: "dual-DS"}
+
+def set_dscts_repeat(dscts_repeat: int):
+    global DSCTS_REPEAT, OUT_DIR
+    DSCTS_REPEAT = dscts_repeat
+    OUT_DIR = BASE_OUT_DIR / DS_MODE_DIRNAME[dscts_repeat]
 
 def set_current_cwds(cwds: int):
     global CURRENT_CWDS
@@ -256,6 +264,7 @@ def run_single_sim(n_pedca: int, data_rate: str,
         f"--cwds={CURRENT_CWDS} "
         f"--qsrc={CURRENT_QSRC} "
         f"--psrc={CURRENT_PSRC} "
+        f"--dsctsRepeat={DSCTS_REPEAT} "
         f"--voicePdfBinUs={bin_us} "
         f"--voicePdfOutput={relative_csv} "
         f"--pedcaStaDelayOutput={relative_pedca_csv} "
@@ -2637,10 +2646,15 @@ def main():
                         help=f"QSRC threshold values to sweep (default: {QSRC_VALUES})")
     parser.add_argument("--psrc-values", nargs="+", type=int, default=None,
                         help=f"PSRC limit values to sweep (default: {PSRC_VALUES})")
+    parser.add_argument("--dscts-repeat", type=int, choices=[1, 2], default=2,
+                        help="DS-CTS frames per Stage-1 attempt: 1=mono-DS, 2=dual-DS "
+                             "(default: 2). Output goes to mono-DS/ or dual-DS/ subdir.")
     parser.add_argument("--fig-width",  type=float, default=14.0)
     parser.add_argument("--fig-height", type=float, default=6.0)
     parser.add_argument("--dpi",        type=int,   default=200)
     args = parser.parse_args()
+
+    set_dscts_repeat(args.dscts_repeat)
 
     data_rate = DATA_RATE
     sim_time  = SIM_TIME
@@ -2656,6 +2670,7 @@ def main():
 
     print(f"\n╔══════════════════════════════════════════════════════════╗")
     print(f"║  P-EDCA CWds×QSRC×PSRC Joint Sweep (Fixed nSta={N_STA})")
+    print(f"║  DS-CTS mode   = {DS_MODE_DIRNAME[DSCTS_REPEAT]} (dsctsRepeat={DSCTS_REPEAT})")
     print(f"║  CWds values   = {cwds_values}")
     print(f"║  QSRC values   = {qsrc_values}")
     print(f"║  PSRC values   = {psrc_values}")

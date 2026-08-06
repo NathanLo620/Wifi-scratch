@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-P-EDCA Count Sweep — Fixed 20 STAs, Varying P-EDCA STA Count
+P-EDCA Count Sweep — Fixed 30 STAs, POISSON traffic
 =============================================================
-Sweeps the number of P-EDCA enabled STAs from 0 to 20 (with total 20 STAs),
-running pedca_verification_nsta.cc with --pedcaRatio=nPedca/20 for each.
+Sweeps the number of P-EDCA enabled STAs with 30 total STAs,
+running pedca_verification_nsta_11be.cc for each configuration.
 
 For each nPedca value:
   - Runs N_RUNS simulations (different RngRun seeds)
@@ -57,7 +57,8 @@ SIM_BINARY      = "scratch/pedca_nsta_poisson_11be.cc"
 # ══════════════════════════════════════════════════════════════════════
 
 # Paths
-OUT_DIR = Path(__file__).resolve().parent
+BASE_OUT_DIR = Path(__file__).resolve().parent
+OUT_DIR = BASE_OUT_DIR   # reassigned in main() to BASE_OUT_DIR/mono-DS or /dual-DS
 NS3_DIR = Path(
     os.environ.get("NS3_DIR", str(Path(__file__).resolve().parents[4]))
 ).resolve()
@@ -92,6 +93,13 @@ CURRENT_QSRC: int = 0
 CURRENT_PSRC: int = 1
 BASELINE_MODE: bool = False     # while True, tag/dir resolve to the EDCA-only subdir
 BASELINE_TAG  = "edca_only"
+DSCTS_REPEAT: int = 2            # 1 = mono-DS (single DS-CTS), 2 = dual-DS (default, matches cc default)
+DS_MODE_DIRNAME = {1: "mono-DS", 2: "dual-DS"}
+
+def set_dscts_repeat(dscts_repeat: int):
+    global DSCTS_REPEAT, OUT_DIR
+    DSCTS_REPEAT = dscts_repeat
+    OUT_DIR = BASE_OUT_DIR / DS_MODE_DIRNAME[dscts_repeat]
 
 def set_current_cwds(cwds: int):
     global CURRENT_CWDS
@@ -256,6 +264,7 @@ def run_single_sim(n_pedca: int, data_rate: str,
         f"--cwds={CURRENT_CWDS} "
         f"--qsrc={CURRENT_QSRC} "
         f"--psrc={CURRENT_PSRC} "
+        f"--dsctsRepeat={DSCTS_REPEAT} "
         f"--voicePdfBinUs={bin_us} "
         f"--voicePdfOutput={relative_csv} "
         f"--pedcaStaDelayOutput={relative_pedca_csv} "
@@ -308,33 +317,55 @@ def run_single_sim(n_pedca: int, data_rate: str,
 # ─────────────────────── Histogram Averaging ─────────────────────────
 
 def average_histograms(csv_paths: list, out_path: Path, n_runs: int):
-    all_bins = defaultdict(list)
+    # Pool packet counts across successful runs. Averaging already-normalized
+    # per-run probabilities overweights runs with fewer completed packets and
+    # discards the sample count needed to audit a CDF.
+    all_bin_counts = defaultdict(int)
+    fallback_bins = defaultdict(list)
+    total_count = 0
+    valid_histograms = 0
     for cp in csv_paths:
         try:
             with open(cp, "r", newline="") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
+                rows = list(reader)
+                if not rows:
+                    continue
+                valid_histograms += 1
+                file_count = sum(int(float(row.get("count", 0) or 0)) for row in rows)
+                if file_count > 0:
+                    total_count += file_count
+                    for row in rows:
+                        key = (float(row["bin_start_us"]), float(row["bin_end_us"]))
+                        all_bin_counts[key] += int(float(row.get("count", 0) or 0))
+                    continue
+                for row in rows:
                     key = (float(row["bin_start_us"]), float(row["bin_end_us"]))
-                    all_bins[key].append(float(row["probability"]))
+                    fallback_bins[key].append(float(row["probability"]))
         except Exception:
             continue
 
-    if not all_bins:
+    if total_count <= 0 and not fallback_bins:
         return
 
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["bin_start_us", "bin_end_us", "bin_mid_us",
                           "pdf_per_us", "probability", "count"])
-        for (start, end) in sorted(all_bins.keys()):
-            probs = all_bins[(start, end)]
-            while len(probs) < n_runs:
-                probs.append(0.0)
-            avg_prob = sum(probs) / n_runs
+        keys = all_bin_counts.keys() if total_count > 0 else fallback_bins.keys()
+        for (start, end) in sorted(keys):
+            if total_count > 0:
+                count = all_bin_counts[(start, end)]
+                probability = count / total_count
+            else:
+                probs = fallback_bins[(start, end)]
+                count = 0
+                probability = sum(probs) / max(valid_histograms, 1)
             mid = (start + end) / 2
             width = end - start
-            pdf = avg_prob / width if width > 0 else 0
-            writer.writerow([start, end, mid, f"{pdf:.8g}", f"{avg_prob:.8g}", 0])
+            pdf = probability / width if width > 0 else 0
+            writer.writerow([start, end, mid, f"{pdf:.8g}",
+                             f"{probability:.8g}", count])
 
 
 # ─────────────────── Statistics Parsing & Averaging ──────────────────
@@ -805,6 +836,16 @@ def load_histogram(csv_path: Path):
 
     mids = [s + 0.5 * bin_width for s in full_starts]
     return mids, full_probs, min_start, max_end, bin_width
+
+
+def histogram_sample_count(csv_path: Path) -> int:
+    """Return the number of packet samples represented by a histogram."""
+    try:
+        with csv_path.open("r", newline="") as f:
+            return sum(int(float(row.get("count", 0) or 0))
+                       for row in csv.DictReader(f))
+    except Exception:
+        return 0
 
 
 def compute_percentiles_from_histogram(mids: list, probs: list,
@@ -2162,6 +2203,7 @@ def plot_combo_cdf(delay_type, type_label, csv_fn, n_pedca, data_rate,
         gmin = min(gmin, baseline_curve[0][0])
 
     pcts = compute_percentiles_from_histogram(mids, probs, [0.5, 0.95, 0.99])
+    sample_count = histogram_sample_count(combo_csv)
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
@@ -2174,6 +2216,10 @@ def plot_combo_cdf(delay_type, type_label, csv_fn, n_pedca, data_rate,
             run += p
             if m <= zoom_xmax:
                 cm.append(m); cv.append(run / tot)
+        if cm:
+            cm.insert(0, cm[0]); cv.insert(0, 0.0)
+            if cm[-1] < zoom_xmax:
+                cm.append(zoom_xmax); cv.append(cv[-1])
         return cm, cv
 
     # EDCA-only baseline first (combo drawn on top)
@@ -2181,11 +2227,12 @@ def plot_combo_cdf(delay_type, type_label, csv_fn, n_pedca, data_rate,
         bcm, bcv = _cdf(baseline_curve[0], baseline_curve[1])
         if bcm:
             ax.plot(bcm, bcv, linewidth=1.3, color="#888888",
-                    linestyle="--", label="EDCA only")
+                    linestyle="--", drawstyle="steps-post", label="EDCA only")
 
     ccm, ccv = _cdf(mids, probs)
-    ax.plot(ccm, ccv, linewidth=1.8, color="#C44E52",
-            label=f"CWds={cwds} × QSRC={qsrc} × PSRC={psrc}")
+    sample_label = f", n={sample_count:,}" if sample_count > 0 else ""
+    ax.plot(ccm, ccv, linewidth=1.8, color="#C44E52", drawstyle="steps-post",
+            label=f"CWds={cwds} × QSRC={qsrc} × PSRC={psrc}{sample_label}")
 
     # median + p95 vertical markers, annotated with the value
     for lvl, col, name in [(0.5, "#4C72B0", "P50"), (0.95, "#DD8452", "P95")]:
@@ -2218,7 +2265,7 @@ def plot_combo_cdf(delay_type, type_label, csv_fn, n_pedca, data_rate,
 
     PCTL_SUMMARY_ROWS.append({
         "cwds": cwds, "qsrc": qsrc, "psrc": psrc, "n_pedca": n_pedca,
-        "delay_type": delay_type,
+        "delay_type": delay_type, "sample_count": sample_count,
         "p50_us": pcts[0.5], "p95_us": pcts[0.95], "p99_us": pcts[0.99],
     })
     return pcts
@@ -2242,7 +2289,7 @@ def plot_combo_cdf_three_types(n_pedca, data_rate, cwds, qsrc, psrc,
         try:
             mids, probs, xmin, xmax, bw = load_histogram(p)
             if sum(probs) > 0:
-                loaded[delay_type] = (mids, probs, bw)
+                loaded[delay_type] = (mids, probs, bw, histogram_sample_count(p))
         except Exception:
             pass
 
@@ -2257,11 +2304,11 @@ def plot_combo_cdf_three_types(n_pedca, data_rate, cwds, qsrc, psrc,
     }
 
     # compute shared x-axis limits across all loaded series + baseline
-    all_series = [(m, p) for m, p, _ in loaded.values()]
+    all_series = [(m, p) for m, p, _, _ in loaded.values()]
     if baseline_curve:
         all_series.append(baseline_curve)
     zoom_xmax = max(_compute_percentile_xlim(all_series, 0.95) * 1.15, 1.0)
-    gmin = min(m[0] for m, _, _ in loaded.values())
+    gmin = min(m[0] for m, _, _, _ in loaded.values())
     if baseline_curve and baseline_curve[0]:
         gmin = min(gmin, baseline_curve[0][0])
 
@@ -2277,6 +2324,10 @@ def plot_combo_cdf_three_types(n_pedca, data_rate, cwds, qsrc, psrc,
             run += p
             if m <= zoom_xmax:
                 cm.append(m); cv.append(run / tot)
+        if cm:
+            cm.insert(0, cm[0]); cv.insert(0, 0.0)
+            if cm[-1] < zoom_xmax:
+                cm.append(zoom_xmax); cv.append(cv[-1])
         return cm, cv
 
     # EDCA-only baseline (grey dashed, drawn first so it's behind)
@@ -2284,24 +2335,27 @@ def plot_combo_cdf_three_types(n_pedca, data_rate, cwds, qsrc, psrc,
         bcm, bcv = _cdf(baseline_curve[0], baseline_curve[1])
         if bcm:
             ax.plot(bcm, bcv, linewidth=1.3, color="#888888",
-                    linestyle="--", label="EDCA only (baseline)")
+                    linestyle="--", drawstyle="steps-post",
+                    label="EDCA only (baseline)")
 
     # Draw each loaded type and mark percentiles
     pct_y_offsets = {"vo": 0.60, "pedca": 0.40, "legacy": 0.20}
     for delay_type in ["vo", "pedca", "legacy"]:
         if delay_type not in loaded:
             continue
-        mids, probs, _ = loaded[delay_type]
+        mids, probs, _, sample_count = loaded[delay_type]
         color, ls, lw, lbl = style_map[delay_type]
         cm, cv = _cdf(mids, probs)
         if not cm:
             continue
-        ax.plot(cm, cv, linewidth=lw, color=color, linestyle=ls, label=lbl)
+        sample_label = f" (n={sample_count:,})" if sample_count > 0 else ""
+        ax.plot(cm, cv, linewidth=lw, color=color, linestyle=ls,
+                drawstyle="steps-post", label=lbl + sample_label)
 
         pcts = compute_percentiles_from_histogram(mids, probs, [0.5, 0.95, 0.99])
         PCTL_SUMMARY_ROWS.append({
             "cwds": cwds, "qsrc": qsrc, "psrc": psrc, "n_pedca": n_pedca,
-            "delay_type": delay_type,
+            "delay_type": delay_type, "sample_count": sample_count,
             "p50_us": pcts[0.5], "p95_us": pcts[0.95], "p99_us": pcts[0.99],
         })
 
@@ -2314,6 +2368,13 @@ def plot_combo_cdf_three_types(n_pedca, data_rate, cwds, qsrc, psrc,
                 ax.text(xv + zoom_xmax * 0.005, y_base + i * 0.07,
                         f"{name}={xv:.0f}µs",
                         fontsize=6.5, color=color, va="bottom")
+
+        if 0 < sample_count < 100:
+            warning_index = ["vo", "pedca", "legacy"].index(delay_type)
+            ax.text(0.01, 0.98 - warning_index * 0.04,
+                    f"Warning: {lbl} has only {sample_count} samples",
+                    transform=ax.transAxes, fontsize=8, color=color,
+                    va="top", fontweight="bold")
 
     ax.set_xlim(gmin, zoom_xmax)
     ax.set_xticks(build_ticks(gmin, zoom_xmax, fig_width))
@@ -2373,13 +2434,14 @@ def write_pctl_summary(data_rate):
     out = OUT_DIR / f"combo_percentile_summary_{data_rate}.csv"
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["CWds", "QSRC", "PSRC", "nPedca", "delay_type",
+        w.writerow(["CWds", "QSRC", "PSRC", "nPedca", "delay_type", "samples",
                     "P50_us", "P95_us", "P99_us"])
         for r in sorted(PCTL_SUMMARY_ROWS,
                         key=lambda r: (r["delay_type"], r["n_pedca"],
                                        r["cwds"], r["qsrc"], r["psrc"])):
             w.writerow([r["cwds"], r["qsrc"], r["psrc"], r["n_pedca"],
-                        r["delay_type"], f"{r['p50_us']:.2f}",
+                        r["delay_type"], r.get("sample_count", ""),
+                        f"{r['p50_us']:.2f}",
                         f"{r['p95_us']:.2f}", f"{r['p99_us']:.2f}"])
     return out
 
@@ -2584,12 +2646,21 @@ def main():
                         help=f"QSRC threshold values to sweep (default: {QSRC_VALUES})")
     parser.add_argument("--psrc-values", nargs="+", type=int, default=None,
                         help=f"PSRC limit values to sweep (default: {PSRC_VALUES})")
+    parser.add_argument("--data-rate", type=str, default=DATA_RATE,
+                        help=f"Per-STA VO data rate, e.g. 0.1Mbps / 0.5Mbps "
+                             f"(default: {DATA_RATE}). Output files are tagged with "
+                             f"this value, so multiple rates coexist in one dir.")
+    parser.add_argument("--dscts-repeat", type=int, choices=[1, 2], default=2,
+                        help="DS-CTS frames per Stage-1 attempt: 1=mono-DS, 2=dual-DS "
+                             "(default: 2). Output goes to mono-DS/ or dual-DS/ subdir.")
     parser.add_argument("--fig-width",  type=float, default=14.0)
     parser.add_argument("--fig-height", type=float, default=6.0)
     parser.add_argument("--dpi",        type=int,   default=200)
     args = parser.parse_args()
 
-    data_rate = DATA_RATE
+    set_dscts_repeat(args.dscts_repeat)
+
+    data_rate = args.data_rate
     sim_time  = SIM_TIME
     bin_us    = BIN_WIDTH
     workers   = args.workers
@@ -2603,6 +2674,7 @@ def main():
 
     print(f"\n╔══════════════════════════════════════════════════════════╗")
     print(f"║  P-EDCA CWds×QSRC×PSRC Joint Sweep (Fixed nSta={N_STA})")
+    print(f"║  DS-CTS mode   = {DS_MODE_DIRNAME[DSCTS_REPEAT]} (dsctsRepeat={DSCTS_REPEAT})")
     print(f"║  CWds values   = {cwds_values}")
     print(f"║  QSRC values   = {qsrc_values}")
     print(f"║  PSRC values   = {psrc_values}")

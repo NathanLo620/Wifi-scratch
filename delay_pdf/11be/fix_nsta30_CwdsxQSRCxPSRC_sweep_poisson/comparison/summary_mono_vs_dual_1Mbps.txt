@@ -1,0 +1,36 @@
+============================================================================================
+  MONO-DS vs DUAL-DS — BEST PARAMETERS SIDE BY SIDE
+  nSta=30  1Mbps  deadline D=10 ms  averaged over nPedca in [5, 15, 30]
+============================================================================================
+
+                               onTime%      P50       P95       P99    loss%  legLoss%
+  ----------------------------------------------------------------------------------------
+  EDCA-only baseline             83.16     1912      9952     13388    12.55       n/a
+      ^ nPedca=0, so there are NO P-EDCA STAs: this row's loss%/delays
+        are those of an ORDINARY legacy EDCA STA (the reference to beat).
+        For the two rows below, loss% IS the P-EDCA STA loss.
+  mono-DS c0/q1/s1               82.46     1821      9886     13339    13.40     13.89
+  dual-DS c1/q2/s3               91.55     2434      7906     11931     6.30     18.98
+
+  ^ those two rows are the single best parameter set averaged over all
+    loads. The best parameters actually DIFFER per nPedca -- the per-load
+    winners below are what the comparison CDFs plot.
+
+============================================================================================
+  BEST PARAMETERS CHOSEN INDEPENDENTLY PER nPedca
+============================================================================================
+
+   nPedca mode      best param       onTime%     P50      P95      P99   loss%  legLoss%
+  ----------------------------------------------------------------------------------------
+        5 EDCA-only --                 83.16    1912     9952    13388   12.55       n/a
+          mono-DS   c0/q1/s1           84.24    1742     9712    13152   11.84     12.76
+          dual-DS   c1/q1/s3           98.17    1578     4412     7322    1.36     15.78
+
+       15 EDCA-only --                 83.16    1912     9952    13388   12.55       n/a
+          mono-DS   c1/q1/s1           82.46    1862     9918    13412   13.35     14.00
+          dual-DS   c1/q3/s3           94.41    2572     8822    11672    3.08     20.39
+
+       30 EDCA-only --                 83.16    1912     9952    13388   12.55       n/a
+          mono-DS   c0/q1/s2           79.95    1962     9992    13312   15.85       n/a
+          dual-DS   c0/q4/s1           83.25    2618    10628    14288   11.07       n/a
+
