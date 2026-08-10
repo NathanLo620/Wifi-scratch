@@ -34,13 +34,16 @@ import matplotlib.pyplot as plt
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "traffic_model_comparison"
 
-# model key -> (directory suffix, data rate, pretty label)
-MODELS = [
-    ("lightload", "0.5Mbps", "Light load (CBR 0.5Mbps)"),
-    ("MMPP",      "1Mbps",   "MMPP (bursty)"),
-    ("onoff",     "1Mbps",   "ON/OFF"),
-    ("poisson",   "1Mbps",   "Poisson"),
+# model key -> (sweep directory name, data rate, pretty label)
+ALL_MODELS = [
+    ("cbr1M",     "fix_nsta30_CwdsxQSRCxPSRC_sweep",           "1Mbps",   "CBR 1Mbps (full load)"),
+    ("lightload", "fix_nsta30_CwdsxQSRCxPSRC_sweep_lightload", "0.5Mbps", "CBR 0.5Mbps (light load)"),
+    ("MMPP",      "fix_nsta30_CwdsxQSRCxPSRC_sweep_MMPP",      "1Mbps",   "MMPP (bursty)"),
+    ("onoff",     "fix_nsta30_CwdsxQSRCxPSRC_sweep_onoff",     "1Mbps",   "ON/OFF"),
+    ("poisson",   "fix_nsta30_CwdsxQSRCxPSRC_sweep_poisson",   "1Mbps",   "Poisson"),
 ]
+MODEL_DIRS = {k: d for k, d, _, _ in ALL_MODELS}
+MODELS = [(k, r, l) for k, _, r, l in ALL_MODELS]   # replaced in main() by --models
 MODES   = ["mono-DS", "dual-DS"]
 NPEDCAS = [5, 15, 30]
 CWDS, QSRCS, PSRCS = [0, 1], list(range(6)), [1, 2, 3]
@@ -54,7 +57,7 @@ def tag(c, q, s):
 
 
 def model_dir(key):
-    return ROOT / f"fix_nsta30_CwdsxQSRCxPSRC_sweep_{key}"
+    return ROOT / MODEL_DIRS[key]
 
 
 # ─────────────────────────── loading ─────────────────────────────────
@@ -214,10 +217,20 @@ def main():
     ap.add_argument("--select-by", choices=["p99", "ontime"], default="p99",
                     help="How 'best' is chosen (default: p99 = smallest P-EDCA P99)")
     ap.add_argument("--deadline-ms", type=float, default=10.0)
+    ap.add_argument("--models", nargs="+", default=None,
+                    choices=[k for k, _, _, _ in ALL_MODELS],
+                    help="Which sweeps to compare (default: all that have data)")
     ap.add_argument("--dpi", type=int, default=200)
     a = ap.parse_args()
     deadline_us = a.deadline_ms * 1000.0
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    global MODELS
+    sel = a.models or [k for k, _, _, _ in ALL_MODELS]
+    MODELS = [(k, r, l) for k, _, r, l in ALL_MODELS if k in sel]
+    # Keep one output set per model selection so runs do not overwrite each other.
+    out_tag = a.select_by if len(MODELS) == len(ALL_MODELS) else \
+        f"{a.select_by}_{'-'.join(k for k, _, _ in MODELS)}"
 
     crit = ("smallest P-EDCA STA P99 delay" if a.select_by == "p99"
             else f"highest on-time delivery R({a.deadline_ms:g}ms)")
@@ -297,10 +310,10 @@ def main():
                  f"{r['red']['P99']:>8.1f}%  {r['best']['loss']:>7.2f}")
     L.append("")
 
-    txt = OUT_DIR / f"traffic_model_comparison_{a.select_by}.txt"
+    txt = OUT_DIR / f"traffic_model_comparison_{out_tag}.txt"
     txt.write_text("\n".join(L) + "\n")
 
-    csv_path = OUT_DIR / f"traffic_model_comparison_{a.select_by}.csv"
+    csv_path = OUT_DIR / f"traffic_model_comparison_{out_tag}.csv"
     with csv_path.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["model", "nPedca", "config", "param", "P50_us", "P95_us",
@@ -354,7 +367,7 @@ def main():
                  f"traffic model\n(best chosen per nPedca by {crit}; "
                  "percentiles cover delivered packets only)", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.90))
-    pdf = OUT_DIR / f"dual_best_vs_edca_reduction_{a.select_by}.pdf"
+    pdf = OUT_DIR / f"dual_best_vs_edca_reduction_{out_tag}.pdf"
     fig.savefig(pdf, dpi=a.dpi, bbox_inches="tight")
     plt.close(fig)
 

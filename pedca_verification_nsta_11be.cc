@@ -32,6 +32,7 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 
 using namespace ns3;
@@ -46,6 +47,14 @@ static uint64_t g_pedcaAppRx = 0;
 static uint64_t g_legacyAppTx = 0;
 static uint64_t g_legacyAppRx = 0;
 static std::set<Ipv4Address> g_pedcaStaAddresses;
+
+// ── Legacy-RTS vs DS-CTS collision tracking ──
+// A "collision" is declared when a legacy STA's RTS transmission starts within
+// a conservative control-frame-airtime window of any P-EDCA STA's DS-CTS
+// transmission (DS-CTS = a CTS-type frame originated by a STA, not the AP).
+struct TxEventUs { double tUs; uint32_t nodeId; };
+static std::vector<TxEventUs> g_legacyRtsTx;
+static std::vector<TxEventUs> g_dsCtsTx;
 
 
 
@@ -105,6 +114,29 @@ static std::string FrameInfoFromPpdu(Ptr<const WifiPpdu> ppdu)
         ss << "??";
     }
     return ss.str();
+}
+
+static void
+PhyTxBeginCollisionCb(bool isPedcaSta, bool isAp, Ptr<const Packet> packet, double /*txPowerW*/)
+{
+    if (Simulator::Now() < Seconds(g_warmupTime) || Simulator::Now() >= Seconds(g_simTime))
+    {
+        return;
+    }
+    Packet copy = *packet;
+    WifiMacHeader hdr;
+    copy.RemoveHeader(hdr);
+    double tUs = Simulator::Now().GetMicroSeconds();
+    if (hdr.IsRts() && !isPedcaSta && !isAp)
+    {
+        g_legacyRtsTx.push_back({tUs, 0});
+    }
+    else if (hdr.IsCts() && isPedcaSta && !isAp)
+    {
+        // Normal CTS is AP-originated (response to RTS); a CTS-type frame sent BY a
+        // P-EDCA STA is specifically the DS-CTS priority-grab signal.
+        g_dsCtsTx.push_back({tUs, 0});
+    }
 }
 
 static void PhyRxBeginCb(std::string label,
@@ -221,6 +253,8 @@ int main(int argc, char* argv[])
   uint32_t psrc = 1;          // dot11PEDCAConsecutiveAttempt (max consecutive P-EDCA attempts)
   uint32_t dsctsRepeat = 2;   // DS-CTS frames per Stage-1 attempt (1=single, 2=dual)
   std::string clogFile = "scratch/pedca_stage2_stats.log";
+  std::string backoffCsvOutput = "";      // CSV of per-attempt (sta,ds_cts_end_us,gap_us,backoff_slots,outcome); empty = skip
+  double collisionWindowUs = 50.0;        // conservative control-frame-airtime overlap window for RTS-vs-DSCTS collision
 
   CommandLine cmd(__FILE__);
   cmd.AddValue("nSta",   "Number of stations", nSta);
@@ -242,6 +276,8 @@ int main(int argc, char* argv[])
   cmd.AddValue("psrc","dot11PEDCAConsecutiveAttempt: max consecutive P-EDCA attempts", psrc);
   cmd.AddValue("dsctsRepeat", "DS-CTS frames per Stage-1 attempt (1=single, 2=dual)", dsctsRepeat);
   cmd.AddValue("clogFile","Redirect std::clog to this file (empty = stderr)", clogFile);
+  cmd.AddValue("backoffCsvOutput","CSV for per-attempt P-EDCA backoff-slot/outcome records (empty = skip)", backoffCsvOutput);
+  cmd.AddValue("collisionWindowUs","Overlap window (us) used to call a legacy-RTS/DS-CTS collision", collisionWindowUs);
   cmd.Parse(argc, argv);
 
   // ── Redirect std::clog (where all the [P-EDCA ...] / [RTS-RX] / [RTS SENT] traces go)
@@ -473,6 +509,21 @@ int main(int argc, char* argv[])
     connectPhyTraces(staDevices.Get(i), l.str());
   }
 
+  // ── Legacy-RTS vs DS-CTS collision tracing ──
+  auto connectCollisionTrace = [](Ptr<NetDevice> dev, bool isPedcaSta, bool isAp) {
+    Ptr<WifiNetDevice> wdev = DynamicCast<WifiNetDevice>(dev);
+    if (!wdev) return;
+    Ptr<WifiPhy> phy = wdev->GetPhy();
+    if (!phy) return;
+    phy->TraceConnectWithoutContext(
+        "PhyTxBegin",
+        MakeBoundCallback(&PhyTxBeginCollisionCb, isPedcaSta, isAp));
+  };
+  connectCollisionTrace(apDevices.Get(0), false, true);
+  for (uint32_t i = 0; i < nSta; ++i) {
+    connectCollisionTrace(staDevices.Get(i), i < nPedcaSta, false);
+  }
+
   // ── Print STA/AP address mapping into the log so the user can identify the
   //    P-EDCA STA in [RTS SENT] / [RTS-RX] traces.
   {
@@ -598,6 +649,44 @@ int main(int argc, char* argv[])
   std::cout << "Total Successes:       " << wifiTxStats.GetSuccesses() << "\n";
   std::cout << "Total Failures:        " << wifiTxStats.GetFailures() << "\n";
   std::cout << "Total Retransmissions: " << wifiTxStats.GetRetransmissions() << "\n\n";
+
+  // ── Legacy-RTS vs DS-CTS collision probability ──
+  {
+    uint32_t legacyRtsCollisions = 0;
+    for (const auto& rts : g_legacyRtsTx) {
+      for (const auto& dcts : g_dsCtsTx) {
+        if (std::abs(rts.tUs - dcts.tUs) < collisionWindowUs) {
+          legacyRtsCollisions++;
+          break;
+        }
+      }
+    }
+    double legacyRtsCollisionProb = g_legacyRtsTx.empty() ? 0.0
+        : (100.0 * legacyRtsCollisions / g_legacyRtsTx.size());
+    std::cout << "\n--- Legacy-RTS vs DS-CTS Collision ---\n";
+    std::cout << "Legacy RTS Total: " << g_legacyRtsTx.size() << "\n";
+    std::cout << "DS-CTS Total: " << g_dsCtsTx.size() << "\n";
+    std::cout << "Legacy RTS x DS-CTS Collisions: " << legacyRtsCollisions << "\n";
+    std::cout << "Legacy RTS-DsCts Collision Prob: " << legacyRtsCollisionProb << " %\n\n";
+  }
+
+  // ── Per-attempt P-EDCA backoff-slot / outcome CSV dump ──
+  if (!backoffCsvOutput.empty()) {
+    std::ofstream ofs(backoffCsvOutput, std::ios::out | std::ios::trunc);
+    ofs << "sta_id,ds_cts_end_us,gap_us,backoff_slots,outcome\n";
+    for (uint32_t i = 0; i < nPedcaSta; ++i) {
+      Ptr<WifiNetDevice> wDev = DynamicCast<WifiNetDevice>(staDevices.Get(i));
+      if (!wDev) continue;
+      auto fem = wDev->GetMac()->GetFrameExchangeManager(0);
+      auto qFem = DynamicCast<QosFrameExchangeManager>(fem);
+      if (!qFem) continue;
+      for (const auto& att : qFem->GetPedcaAttempts()) {
+        ofs << i << "," << att.dsCtsEndUs << "," << att.gapUs << ","
+            << att.backoffSlots << "," << att.outcome << "\n";
+      }
+    }
+    std::cout << "[INFO] Wrote per-attempt backoff CSV: " << backoffCsvOutput << "\n\n";
+  }
 
   auto printApplicationLoss = [](const std::string& label, uint64_t tx, uint64_t rx) {
       const double loss = tx > 0 ? 100.0 * static_cast<double>(tx - std::min(tx, rx)) / tx : 0.0;

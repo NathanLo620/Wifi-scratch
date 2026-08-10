@@ -1,0 +1,113 @@
+========================================================================================================
+  CROSS-TRAFFIC-MODEL COMPARISON — P-EDCA STA VO DELAY
+  nSta=30   best parameters chosen per nPedca by: smallest P-EDCA STA P99 delay
+  default param = CWds=0/QSRC=2/PSRC=1
+========================================================================================================
+
+  Percentiles cover DELIVERED packets only -- read them next to loss%.
+
+========================================================================================================
+  CBR 1Mbps (full load)    (cbr1M, 1Mbps)
+========================================================================================================
+
+  --- nPedca = 5/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --               2408     7912    10882   11.09
+  mono-DS default            c0_q02_s01       2128     7712    10448    8.43
+  mono-DS best               c0_q02_s01       2128     7712    10448    8.43
+  dual-DS default            c0_q02_s01       2808     6232     8778    4.53
+  dual-DS best               c0_q01_s03       1742     3448     6522    1.19
+
+  >> dual-DS best (c0_q01_s03) vs EDCA-only:
+       P50:     2408 ->     1742 us     -27.6 %   (improvement)
+       P95:     7912 ->     3448 us     -56.4 %   (improvement)
+       P99:    10882 ->     6522 us     -40.1 %   (improvement)
+
+  --- nPedca = 15/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --               2408     7912    10882   11.09
+  mono-DS default            c0_q02_s01       2542     7902    11032   11.56
+  mono-DS best               c0_q00_s03       2582     7882    10632    9.52
+  dual-DS default            c0_q02_s01       3062     7202    10988    7.84
+  dual-DS best               c0_q05_s03       2188     7732     8302    2.14
+
+  >> dual-DS best (c0_q05_s03) vs EDCA-only:
+       P50:     2408 ->     2188 us      -9.1 %   (improvement)
+       P95:     7912 ->     7732 us      -2.3 %   (improvement)
+       P99:    10882 ->     8302 us     -23.7 %   (improvement)
+
+  --- nPedca = 30/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --               2408     7912    10882   11.09
+  mono-DS default            c0_q02_s01       2542     7928    10902   11.67
+  mono-DS best               c0_q01_s03       2338     7848    10478   12.78
+  dual-DS default            c0_q02_s01       3218     7928    12548   13.80
+  dual-DS best               c0_q04_s03       2478     7948    10258    4.88
+
+  >> dual-DS best (c0_q04_s03) vs EDCA-only:
+       P50:     2408 ->     2478 us      +2.9 %   (worse)
+       P95:     7912 ->     7948 us      +0.4 %   (worse)
+       P99:    10882 ->    10258 us      -5.7 %   (improvement)
+
+========================================================================================================
+  CBR 0.5Mbps (light load)    (lightload, 0.5Mbps)
+========================================================================================================
+
+  --- nPedca = 5/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --                732     3568     5802    0.14
+  mono-DS default            c0_q02_s01        748     3158     5112    0.08
+  mono-DS best               c0_q01_s03        752     2368     4268    0.05
+  dual-DS default            c0_q02_s01        758     3108     4532    0.04
+  dual-DS best               c0_q01_s03        768     2118     2942    0.03
+
+  >> dual-DS best (c0_q01_s03) vs EDCA-only:
+       P50:      732 ->      768 us      +4.8 %   (worse)
+       P95:     3568 ->     2118 us     -40.6 %   (improvement)
+       P99:     5802 ->     2942 us     -49.3 %   (improvement)
+
+  --- nPedca = 15/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --                732     3568     5802    0.14
+  mono-DS default            c0_q02_s01        732     3312     5192    0.08
+  mono-DS best               c0_q02_s02        738     3258     4928    0.09
+  dual-DS default            c0_q02_s01        758     3302     4762    0.06
+  dual-DS best               c0_q01_s03        882     2598     4062    0.06
+
+  >> dual-DS best (c0_q01_s03) vs EDCA-only:
+       P50:      732 ->      882 us     +20.5 %   (worse)
+       P95:     3568 ->     2598 us     -27.2 %   (improvement)
+       P99:     5802 ->     4062 us     -30.0 %   (improvement)
+
+  --- nPedca = 30/30 ---
+  configuration              param             P50      P95      P99   loss%
+  --------------------------------------------------------------------------
+  EDCA-only (reference)      --                732     3568     5802    0.14
+  mono-DS default            c0_q02_s01        752     3598     5918    0.14
+  mono-DS best               c0_q03_s01        738     3628     5542    0.10
+  dual-DS default            c0_q02_s01        782     3838     5982    0.15
+  dual-DS best               c0_q03_s01        752     3762     5568    0.06
+
+  >> dual-DS best (c0_q03_s01) vs EDCA-only:
+       P50:      732 ->      752 us      +2.7 %   (worse)
+       P95:     3568 ->     3762 us      +5.5 %   (worse)
+       P99:     5802 ->     5568 us      -4.0 %   (improvement)
+
+========================================================================================================
+  SUMMARY — dual-DS best vs EDCA-only  (negative % = delay reduction)
+========================================================================================================
+
+  traffic model              nPedca param             dP50      dP95      dP99    loss%
+  ------------------------------------------------------------------------------------
+  CBR 1Mbps (full load)           5 c0_q01_s03      -27.6%    -56.4%    -40.1%     1.19
+  CBR 1Mbps (full load)          15 c0_q05_s03       -9.1%     -2.3%    -23.7%     2.14
+  CBR 1Mbps (full load)          30 c0_q04_s03        2.9%      0.4%     -5.7%     4.88
+  CBR 0.5Mbps (light load)        5 c0_q01_s03        4.8%    -40.6%    -49.3%     0.03
+  CBR 0.5Mbps (light load)       15 c0_q01_s03       20.5%    -27.2%    -30.0%     0.06
+  CBR 0.5Mbps (light load)       30 c0_q03_s01        2.7%      5.5%     -4.0%     0.06
+

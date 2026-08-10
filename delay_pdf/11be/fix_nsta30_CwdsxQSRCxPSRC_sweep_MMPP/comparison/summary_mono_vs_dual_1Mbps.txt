@@ -9,8 +9,8 @@
       ^ nPedca=0, so there are NO P-EDCA STAs: this row's loss%/delays
         are those of an ORDINARY legacy EDCA STA (the reference to beat).
         For the two rows below, loss% IS the P-EDCA STA loss.
-  mono-DS c1/q1/s1               81.75     1809     10081     13706    13.81     13.75
-  dual-DS c1/q2/s3               91.28     2309      8031     12314     6.43     20.23
+  mono-DS c0/q4/s1               83.44     1866      9908     13536    12.30     12.76
+  dual-DS c0/q2/s3               90.42     2198      7678     12139     7.32     19.24
 
   ^ those two rows are the single best parameter set averaged over all
     loads. The best parameters actually DIFFER per nPedca -- the per-load
@@ -23,14 +23,14 @@
    nPedca mode      best param       onTime%     P50      P95      P99   loss%  legLoss%
   ----------------------------------------------------------------------------------------
         5 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c1/q1/s1           82.69    1748     9972    13602   13.01     13.78
-          dual-DS   c1/q1/s3           97.99    1498     4308     6828    1.59     18.08
+          mono-DS   c0/q2/s2           87.31    1702     9432    13312    8.97     12.26
+          dual-DS   c0/q2/s3           98.12    1818     5668     7632    1.47     15.58
 
        15 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c1/q1/s1           82.29    1792    10038    13658   13.32     13.72
-          dual-DS   c1/q3/s3           93.23    2578     9128    12202    3.81     23.27
+          mono-DS   c0/q4/s1           83.84    1868     9978    13562   11.80     13.02
+          dual-DS   c0/q3/s3           93.02    2478     8702    11998    4.61     22.38
 
        30 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c0/q1/s2           79.95    1872    10132    13628   15.61       n/a
-          dual-DS   c0/q4/s1           84.25    2462    10768    14598    9.70       n/a
+          mono-DS   c0/q1/s3           78.98    1908    10018    13432   16.83       n/a
+          dual-DS   c0/q4/s1           84.47    2438    10588    14408    9.94       n/a
 

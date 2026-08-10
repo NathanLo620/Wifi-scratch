@@ -302,16 +302,33 @@ def _sort_key(r):
 
 # ────────────────────────── Heatmaps ─────────────────────────────────
 
+def metric_range(all_recs, metric):
+    """Min/max of a metric across EVERY mode, so mono and dual heatmaps share
+    one colour scale and can be compared cell-to-cell."""
+    vals = [all_recs[m][(c, q, s, n)].get(metric, float("nan"))
+            for m in all_recs
+            for c in CWDS for q in QSRCS for s in PSRCS for n in NPEDCAS]
+    vals = [v for v in vals if v == v]
+    return (min(vals), max(vals)) if vals else (None, None)
+
+
 def heatmap(recs, mode, metric, title, cbar_label, out_path,
-            lower_is_better=True, fmt="{:.0f}", dpi=200):
-    """QSRC x PSRC grid; rows = nPedca, cols = CWds. Shared color scale."""
+            lower_is_better=True, fmt="{:.0f}", dpi=200,
+            vmin=None, vmax=None):
+    """QSRC x PSRC grid; rows = nPedca, cols = CWds.
+
+    vmin/vmax are supplied by the caller so that the same metric uses an
+    identical colour scale in every mode; without them the range is taken from
+    this mode's data alone.
+    """
     vals = [recs[(c, q, s, n)].get(metric, float("nan"))
             for c in CWDS for q in QSRCS for s in PSRCS for n in NPEDCAS]
     vals = [v for v in vals if v == v]
     if not vals:
         print(f"    (skip {out_path.name}: no data)")
         return
-    vmin, vmax = min(vals), max(vals)
+    if vmin is None or vmax is None:
+        vmin, vmax = min(vals), max(vals)
     cmap = "RdYlGn_r" if lower_is_better else "RdYlGn"
 
     fig, axes = plt.subplots(len(NPEDCAS), len(CWDS),
@@ -345,8 +362,10 @@ def heatmap(recs, mode, metric, title, cbar_label, out_path,
             ax.set_title(f"nPedca={n}/{N_STA}   CWds={c}", fontsize=10, pad=6)
 
     fig.suptitle(f"{title}\n{MODE_LABEL[mode]}   "
-                 f"(nSta={N_STA}, {DATA_RATE}, black box = best in panel)",
-                 fontsize=12, y=0.995)
+                 f"(nSta={N_STA}, {DATA_RATE}, black box = best in panel)\n"
+                 f"colour scale {vmin:.0f}-{vmax:.0f} shared across "
+                 f"{' & '.join(MODES)} — panels are directly comparable",
+                 fontsize=11, y=0.995)
     fig.subplots_adjust(right=0.88, top=0.92, hspace=0.35, wspace=0.18)
     cax = fig.add_axes([0.90, 0.08, 0.022, 0.80])
     fig.colorbar(im, cax=cax).set_label(cbar_label, fontsize=9)
@@ -493,6 +512,14 @@ def _curves_for(winners_per_n, base_curve, base_loss, n):
     return out
 
 
+def _cdf_x_at(mids, cum, target):
+    """Smallest delay whose cumulative probability reaches `target`."""
+    for m, c in zip(mids, cum):
+        if c >= target:
+            return m
+    return mids[-1] if mids else 0.0
+
+
 def _draw_cdf(ax, curves, deadline_us, unconditional, show_ceiling=True):
     for label, color, ls, mids, cum, deliv in curves:
         scale = deliv if unconditional else 1.0
@@ -504,7 +531,11 @@ def _draw_cdf(ax, curves, deadline_us, unconditional, show_ceiling=True):
     ax.axvline(deadline_us, color="#888888", lw=1.0, ls=":", zorder=1)
     ax.text(deadline_us, 0.02, f" D={deadline_us/1000:g}ms", fontsize=8,
             color="#666666", rotation=90, va="bottom")
-    ax.set_xlim(0, max(deadline_us * 1.8, 15000))
+    # Scale the x-axis to the data: a fixed floor wastes most of the width at
+    # light load (P99 ~ 6ms) and clips the tail at heavy load.
+    tails = [_cdf_x_at(mids, cum, 0.995) for _, _, _, mids, cum, _ in curves if mids]
+    xmax = max(tails) * 1.15 if tails else 15000.0
+    ax.set_xlim(0, max(xmax, deadline_us * 1.1))
     ax.set_ylim(0, 1.02)
     ax.grid(alpha=0.25, lw=0.6)
 
@@ -699,17 +730,28 @@ def main():
     # winners[mode]      -> best combo for EACH nPedca, chosen independently
     # overall[mode]       -> single best combo averaged over all nPedca
     winners, overall, bases, all_recs = {}, {}, {}, {}
+
+    # Pass 1: load every mode first, so heatmap colour scales can span all of
+    # them and mono/dual panels become directly comparable.
+    for mode in MODES:
+        recs, base = collect(mode, deadline_us)
+        all_recs[mode] = recs
+        bases[mode] = base
+        ranked = rank_combos(recs)
+        overall[mode] = ranked[0]
+        winners[mode] = {n: rank_combos(recs, [n])[0] for n in NPEDCAS}
+    clim = {m: metric_range(all_recs, m) for m in
+            ("pedca_ontime_pct", "pedca_P99", "pedca_P50",
+             "pedca_loss_pct", "legacy_loss_pct", "legacy_P99")}
+
+    # Pass 2: reports and figures.
     for mode in MODES:
         print(f"\n{'='*70}\n  {MODE_LABEL[mode]}\n{'='*70}")
         out_dir = ROOT / mode / "analysis"
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        recs, base = collect(mode, deadline_us)
+        recs, base = all_recs[mode], bases[mode]
         ranked = rank_combos(recs)
-        overall[mode] = ranked[0]
-        winners[mode] = {n: rank_combos(recs, [n])[0] for n in NPEDCAS}
-        bases[mode] = base
-        all_recs[mode] = recs
 
         write_report(mode, ranked, base, deadline_us, out_dir,
                      per_n_winners=winners[mode])
@@ -718,27 +760,33 @@ def main():
                 f"P-EDCA STA On-Time Delivery R(D={a.deadline_ms:g}ms)",
                 "on-time delivery (%)",
                 out_dir / f"heatmap_pedca_ontime_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=False, fmt="{:.1f}", dpi=a.dpi)
+                lower_is_better=False, fmt="{:.1f}", dpi=a.dpi,
+                vmin=clim["pedca_ontime_pct"][0], vmax=clim["pedca_ontime_pct"][1])
         heatmap(recs, mode, "pedca_P99",
                 "P-EDCA STA VO Delay — P99", "P99 delay (us)",
                 out_dir / f"heatmap_pedca_P99_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi)
+                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi,
+                vmin=clim["pedca_P99"][0], vmax=clim["pedca_P99"][1])
         heatmap(recs, mode, "pedca_P50",
                 "P-EDCA STA VO Delay — Median", "P50 delay (us)",
                 out_dir / f"heatmap_pedca_P50_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi)
+                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi,
+                vmin=clim["pedca_P50"][0], vmax=clim["pedca_P50"][1])
         heatmap(recs, mode, "pedca_loss_pct",
                 "P-EDCA STA Packet Loss", "loss (%)",
                 out_dir / f"heatmap_pedca_loss_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=True, fmt="{:.1f}", dpi=a.dpi)
+                lower_is_better=True, fmt="{:.1f}", dpi=a.dpi,
+                vmin=clim["pedca_loss_pct"][0], vmax=clim["pedca_loss_pct"][1])
         heatmap(recs, mode, "legacy_loss_pct",
                 "Legacy STA Packet Loss (fairness cost)", "loss (%)",
                 out_dir / f"heatmap_legacy_loss_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=True, fmt="{:.1f}", dpi=a.dpi)
+                lower_is_better=True, fmt="{:.1f}", dpi=a.dpi,
+                vmin=clim["legacy_loss_pct"][0], vmax=clim["legacy_loss_pct"][1])
         heatmap(recs, mode, "legacy_P99",
                 "Legacy STA VO Delay — P99 (fairness cost)", "P99 delay (us)",
                 out_dir / f"heatmap_legacy_P99_{mode}_{DATA_RATE}.pdf",
-                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi)
+                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi,
+                vmin=clim["legacy_P99"][0], vmax=clim["legacy_P99"][1])
 
         w = ranked[0]
         print(f"    BEST overall (avg over nPedca): CWds={w['cwds']} "
