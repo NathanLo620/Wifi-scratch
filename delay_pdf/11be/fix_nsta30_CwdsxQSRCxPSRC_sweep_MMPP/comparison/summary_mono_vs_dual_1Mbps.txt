@@ -5,12 +5,12 @@
 
                                onTime%      P50       P95       P99    loss%  legLoss%
   ----------------------------------------------------------------------------------------
-  EDCA-only baseline             82.91     1822     10142     13748    12.47       n/a
+  EDCA-only baseline             89.55     1512      9102     13058     7.06       n/a
       ^ nPedca=0, so there are NO P-EDCA STAs: this row's loss%/delays
         are those of an ORDINARY legacy EDCA STA (the reference to beat).
         For the two rows below, loss% IS the P-EDCA STA loss.
-  mono-DS c0/q4/s1               83.44     1866      9908     13536    12.30     12.76
-  dual-DS c0/q2/s3               90.42     2198      7678     12139     7.32     19.24
+  mono-DS c0/q1/s3               90.18     1449      8659     12676     6.84      9.11
+  dual-DS c0/q2/s3               94.94     1788      6752     10849     3.49     11.22
 
   ^ those two rows are the single best parameter set averaged over all
     loads. The best parameters actually DIFFER per nPedca -- the per-load
@@ -22,15 +22,15 @@
 
    nPedca mode      best param       onTime%     P50      P95      P99   loss%  legLoss%
   ----------------------------------------------------------------------------------------
-        5 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c0/q2/s2           87.31    1702     9432    13312    8.97     12.26
-          dual-DS   c0/q2/s3           98.12    1818     5668     7632    1.47     15.58
+        5 EDCA-only --                 89.55    1512     9102    13058    7.06       n/a
+          mono-DS   c0/q2/s2           91.68    1522     8282    12518    5.66      7.71
+          dual-DS   c0/q1/s3           98.35    1332     3402     6888    1.23      9.75
 
-       15 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c0/q4/s1           83.84    1868     9978    13562   11.80     13.02
-          dual-DS   c0/q3/s3           93.02    2478     8702    11998    4.61     22.38
+       15 EDCA-only --                 89.55    1512     9102    13058    7.06       n/a
+          mono-DS   c0/q1/s1           90.02    1432     8858    12742    6.82      7.92
+          dual-DS   c0/q3/s3           96.92    1792     7688    10478    1.79     10.82
 
-       30 EDCA-only --                 82.91    1822    10142    13748   12.47       n/a
-          mono-DS   c0/q1/s3           78.98    1908    10018    13432   16.83       n/a
-          dual-DS   c0/q4/s1           84.47    2438    10588    14408    9.94       n/a
+       30 EDCA-only --                 89.55    1512     9102    13058    7.06       n/a
+          mono-DS   c0/q1/s3           89.97    1458     8722    12572    7.11       n/a
+          dual-DS   c0/q3/s3           92.12    2038     9002    13352    4.75       n/a
 

@@ -76,6 +76,7 @@ ControlStepTrace(Time now,
 static double g_apIdleUs = 0;
 static double g_warmupTime = 1.0;
 static double g_simTime = 10.0;
+static bool g_diagnosticLog = true;
 
 
 
@@ -168,14 +169,17 @@ void ApPhyStateTrace(std::string context, Time start, Time duration, ns3::WifiPh
         }
     }
 
-    // Trace AP PHY state to clog so that we can correlate "RTS sent at t=X" with
-    // whether the AP was actually able to receive (IDLE/CCA_BUSY/RX/TX) at that instant.
-    double startUs = start.GetMicroSeconds();
-    double endUs = startUs + duration.GetMicroSeconds();
-    std::clog << "[AP-PHY] state=" << PhyStateName(state)
-              << " start=" << startUs << "us"
-              << " end=" << endUs << "us"
-              << " duration=" << duration.GetMicroSeconds() << "us" << std::endl;
+    if (g_diagnosticLog)
+    {
+        // Trace AP PHY state to clog so that an RTS can be correlated with whether the AP
+        // was able to receive at that instant.  Batch sweeps disable this expensive detail.
+        double startUs = start.GetMicroSeconds();
+        double endUs = startUs + duration.GetMicroSeconds();
+        std::clog << "[AP-PHY] state=" << PhyStateName(state)
+                  << " start=" << startUs << "us"
+                  << " end=" << endUs << "us"
+                  << " duration=" << duration.GetMicroSeconds() << "us" << std::endl;
+    }
 }
 
 // Helper to get AC name
@@ -217,6 +221,7 @@ int main(int argc, char* argv[])
   uint32_t maxAmpduSize = 65535; // Maximum A-MPDU size, in bytes
   uint32_t maxAmsduSize = 7935;  // Maximum A-MSDU size, in bytes
   bool verbose = false;
+  bool diagnosticLog = true;
   double warmupTime = 1.0;
   uint32_t voicePdfBinUs = 5;
   std::string voicePdfOutput = "scratch/delay_pdf/pedca_vo_delay_pdf.csv";
@@ -231,7 +236,7 @@ int main(int argc, char* argv[])
 
   // ── Adaptive P-EDCA closed loop ──
   bool     adaptive = false;        // opt-in: keeps existing sweeps bit-identical by default
-  std::string policy = "kdriven";   // kdriven | v2 | fixed
+  std::string policy = "kdriven";   // kdriven | loaddriven | burstadaptive | v2 | fixed
   int32_t  kOverride = -1;          // force the P-EDCA STA count instead of estimating it
   double   qsrcIntercept = 0.5;     // QSRC = clamp(round(intercept + slope*k), 0, 5)
   double   qsrcSlope = 0.2;
@@ -261,6 +266,9 @@ int main(int argc, char* argv[])
   cmd.AddValue("simTime","Simulation time (seconds)", simTime);
   cmd.AddValue("dataRate","Data rate (e.g., 0.5Mbps)", dataRate);
   cmd.AddValue("verbose","Enable logging", verbose);
+  cmd.AddValue("diagnosticLog",
+               "Write per-frame PHY diagnostics to clog (disable for batch sweeps)",
+               diagnosticLog);
   cmd.AddValue("enableAggregation","Enable A-MPDU/A-MSDU aggregation for all ACs", enableAggregation);
   cmd.AddValue("baBufferSize","Block Ack buffer/window size in MPDUs", baBufferSize);
   cmd.AddValue("maxAmpduSize","Maximum A-MPDU size in bytes when aggregation is enabled", maxAmpduSize);
@@ -276,7 +284,7 @@ int main(int argc, char* argv[])
   cmd.AddValue("dsctsRepeat", "DS-CTS frames per Stage-1 attempt (1=single, 2=dual)", dsctsRepeat);
   cmd.AddValue("clogFile","Redirect std::clog to this file (empty = stderr)", clogFile);
   cmd.AddValue("adaptive","Run the AP-side P-EDCA controller (0 = plain static P-EDCA)", adaptive);
-  cmd.AddValue("policy","Controller rule set: kdriven | v2 | fixed", policy);
+  cmd.AddValue("policy","Controller rule set: kdriven | loaddriven | burstadaptive | v2 | fixed", policy);
   cmd.AddValue("kOverride","Force the P-EDCA STA count the controller assumes; <0 = estimate", kOverride);
   cmd.AddValue("qsrcIntercept","Intercept of the k-driven QSRC law", qsrcIntercept);
   cmd.AddValue("qsrcSlope","Slope per P-EDCA STA of the k-driven QSRC law", qsrcSlope);
@@ -328,6 +336,7 @@ int main(int argc, char* argv[])
   
   g_warmupTime = warmupTime;
   g_simTime = simTime;
+  g_diagnosticLog = diagnosticLog;
   
 
   
@@ -468,6 +477,7 @@ int main(int argc, char* argv[])
       }
 
       pedcaController->Start(Seconds(ctrlStart));
+      Simulator::Schedule(Seconds(simTime), &PedcaController::Stop, pedcaController);
       std::clog << "[P-EDCA CTRL] adaptive on: policy=" << policy
                 << " period=" << controlPeriodMs << "ms ctrlStart=" << ctrlStart
                 << "s trueNPedca=" << nPedcaSta << std::endl;
@@ -565,15 +575,19 @@ int main(int argc, char* argv[])
         "PhyRxPpduDrop",
         MakeBoundCallback(&PhyRxPpduDropCb, label));
   };
-  connectPhyTraces(apDevices.Get(0), "AP");
-  for (uint32_t i = 0; i < nSta; ++i) {
-    std::stringstream l;
-    l << "STA" << i << ((i < nPedcaSta) ? "(P)" : "(L)");
-    connectPhyTraces(staDevices.Get(i), l.str());
+  if (diagnosticLog)
+  {
+    connectPhyTraces(apDevices.Get(0), "AP");
+    for (uint32_t i = 0; i < nSta; ++i) {
+      std::stringstream l;
+      l << "STA" << i << ((i < nPedcaSta) ? "(P)" : "(L)");
+      connectPhyTraces(staDevices.Get(i), l.str());
+    }
   }
 
   // ── Print STA/AP address mapping into the log so the user can identify the
   //    P-EDCA STA in [RTS SENT] / [RTS-RX] traces.
+  if (diagnosticLog)
   {
     std::clog << "================ P-EDCA Stage 2 Diagnostic Log ================\n";
     std::clog << "nSta=" << nSta << "  P-EDCA STAs=" << nPedcaSta

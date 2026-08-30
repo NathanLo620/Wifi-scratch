@@ -741,7 +741,7 @@ def main():
         overall[mode] = ranked[0]
         winners[mode] = {n: rank_combos(recs, [n])[0] for n in NPEDCAS}
     clim = {m: metric_range(all_recs, m) for m in
-            ("pedca_ontime_pct", "pedca_P99", "pedca_P50",
+            ("pedca_ontime_pct", "pedca_P99", "pedca_P95", "pedca_P50",
              "pedca_loss_pct", "legacy_loss_pct", "legacy_P99")}
 
     # Pass 2: reports and figures.
@@ -767,6 +767,11 @@ def main():
                 out_dir / f"heatmap_pedca_P99_{mode}_{DATA_RATE}.pdf",
                 lower_is_better=True, fmt="{:.0f}", dpi=a.dpi,
                 vmin=clim["pedca_P99"][0], vmax=clim["pedca_P99"][1])
+        heatmap(recs, mode, "pedca_P95",
+                "P-EDCA STA VO Delay — P95", "P95 delay (us)",
+                out_dir / f"heatmap_pedca_P95_{mode}_{DATA_RATE}.pdf",
+                lower_is_better=True, fmt="{:.0f}", dpi=a.dpi,
+                vmin=clim["pedca_P95"][0], vmax=clim["pedca_P95"][1])
         heatmap(recs, mode, "pedca_P50",
                 "P-EDCA STA VO Delay — Median", "P50 delay (us)",
                 out_dir / f"heatmap_pedca_P50_{mode}_{DATA_RATE}.pdf",
